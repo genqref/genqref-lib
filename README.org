@@ -1,0 +1,120 @@
+#+begin_example
+                              ___    ___ __
+  ___ ____ ___  ___ ________ / _/___/ (_) /
+ / _ `/ -_) _ \/ _ `/ __/ -_) _/___/ / / _ \
+ \_, /\__/_//_/\_, /_/  \__/_/    /_/_/_.__/
+/___/           /_/
+#+end_example
+
+genrqref-lib is a batteries-included API Wrapper for the great [[https://spacetraders.io/][Space
+Traders API]] in Clojure.
+
+It is based on [[https://github.com/oliyh/martian][Martian]] (the HTTP abstraction library for
+Clojure/script, supporting OpenAPI, Swagger, Schema, re-frame and
+more). In order to minimize the number requests it supports a local
+cache persisted through a [[https://github.com/jimpil/duratom][duratom]].
+
+* Introduction
+
+#+begin_src clojure
+  (require '[genqref-lib.api :refer :all])
+
+  ;; First you need to register a new agent
+
+  (register! {:faction "COSMIC"
+              :symbol "EXAMPLE-BOB"
+              :email "bob@example.com"})
+
+  ;; This will register a new agent and initialize the api for
+  ;; authorized calls. Additionally this will create a local file
+  ;; `tokens.edn` which holds your tokens. On subsequent runs you can
+  ;; initialize the api with the token for the current run by calling
+
+  (init!)
+
+  ;; The registration did also populate the state (local cache) with
+  ;; initial details. See you got some credits already
+
+  (-> @state :agent :credits) ;; => 100000
+
+  ;; `@state` is just a deeply nested map which holds all the data
+  ;; retrieved from the API. This is helpful, as the API is
+  ;; rate-limited. Here is your first ship
+
+  (def ship (-> @state :ships vals first))
+
+  ;; Your ship is located at a waypoint
+
+  (def waypoint (-> ship :nav :waypointSymbol))
+
+  ;; Technically this is not the waypoint. It's the waypoint's symbol.
+  ;; Let's fix that by requesting more information from the API
+
+  (def waypoint (refresh! :waypoint waypoint))
+
+  ;; This will of course update `@state`, but fro convenience it also
+  ;; returns the payload of the request. There are a couple more points
+  ;; to note here: Outdated or missing information can be "refreshed" by
+  ;; calling `refresh!`. All functions in genqref-lib that end in an
+  ;; exclamation mark will perform one (or more, but usually one)
+  ;; request against the API. `refresh!` reads information from the API
+  ;; and updates the local state. For convenience in genqref-lib entity
+  ;; maps like the waypoint we just received can be used interchangibly
+  ;; with its symbol (ST-symbol, not Clojure symbol) in all function
+  ;; calls. So the following two calls both work and yield the same
+  ;; result.
+
+  (refresh! :waypoint waypoint)
+  (refresh! :waypoint (:symbol waypoint))
+
+  ;; This comes in handy when exploring ST from the repl as you can
+  ;; simply cut and paste the string identifiers and use them in
+  ;; function calls.
+#+end_src
+
+Here is a more or less complete list of meaningful function calls of
+genqref-lib at time of writing:
+
+#+begin_src clojure
+  (refresh! :factions)
+  (refresh! :faction faction)
+  (refresh! :ships)
+  (refresh! :ship ship)
+  (refresh! :cargo ship)
+  (refresh! :cooldown ship)
+  (refresh! :nav ship)
+  (refresh! :contracts)
+  (refresh! :contract contract)
+  (refresh! :systems)
+  (refresh! :system system)
+  (refresh! :waypoints)
+  (refresh! :waypoint waypoint)
+  (refresh! :market waypoint)
+  (refresh! :shipyard waypoint)
+  (refresh! :jumpgate waypoint)
+  (refresh! :agent)
+
+  (purchase-ship! waypoint ship-type)
+  (orbit! ship)
+  (chart! ship)
+  (dock! ship)
+  (survey! ship)
+  (survey! ship {:on-cooldown #(println "hello")})
+  (extract! ship)
+  (extract! ship {:survey survey :on-cooldown #(println "hello")})
+  (jettison! ship trade-symbol units)
+  (jump! ship system)
+  (jump! ship system {:on-cooldown #(println "hello")})
+  (navigate! ship waypoint)
+  (navigate! ship waypoint {:on-arrival #(println "hello")})
+  (flight-mode! ship mode)
+  (scan-systems! ship)
+  (scan-waypoints! ship)
+  (scan-ships! ship)
+  (purchase-cargo! ship trade-symbol units)
+  (transfer! from to trade-symbol units)
+  (negotiate-contract! ship)
+  (deliver-contract! ship contract trade-symbol units)
+  (accept-contract! contract)
+  (fulfill-contract! contract)
+#+end_src
