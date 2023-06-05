@@ -56,14 +56,16 @@
     (warn "There is already a token for the current run. Abort.")
     (when-let [{:keys [token agent contract faction ship] :as response}
                (:data (:body (martian/response-for public-api :register options)))]
-      (swap! tokens assoc :resetDate token)
-      (reset! state {:agent agent
-                     :contracts {(keyword (:id contract)) contract}
-                     :factions {(keyword (sym faction)) faction}
-                     :ships {(keyword (sym ship)) ship}})
-      (init!)
-      (info "Successfully registered and reinitialized.")
-      response)))
+      (let [{:keys [resetDate]} (status)]
+        (swap! tokens assoc resetDate token)
+        (reset! state {:resetDate resetDate
+                       :agent agent
+                       :contracts {(keyword (:id contract)) contract}
+                       :factions {(keyword (sym faction)) faction}
+                       :ships {(keyword (sym ship)) ship}})
+        (init!)
+        (info "Successfully registered and reinitialized.")
+        response))))
 
 #_(register! {:faction "COSMIC"
               :symbol "CALLSIGN"
@@ -84,8 +86,13 @@
 
 (def ^:dynamic *api*)
 
-(defn init! []
-  (alter-var-root #'*api* (constantly (api (token)))))
+(def ^:dynamic *reset-fn*)
+
+(defn init!
+  ([] (init! nil))
+  ([reset-fn]
+   (alter-var-root #'*api* (constantly (api (token))))
+   (alter-var-root #'*reset-fn* (constantly reset-fn))))
 
 ;;; error handling
 
@@ -111,7 +118,7 @@
   message. "
   [message]
   ;; "Ship extract failed. Survey X1-VS75-67965Z-97E75E has been exhausted."
-  (let [signature (re-find #"[0-9A-Z-]{21}" message)
+  (let [signature (second (re-find #"Survey ([0-9A-Z-]+) has" message))
         waypoint (parse-waypoint signature)]
     (swap! state update-in [:surveys (keyword waypoint)]
            (partial remove #(-> % :signature (= signature))))
@@ -161,6 +168,8 @@
                ;; 4214 - Ship action failed. Ship is not currently in
                ;; orbit at ...
                4214 (do)
+               ;; 4216 - Failed to purchase ship. Agent has insufficient funds.
+               4216 (do)
                ;; 4217 - Failed to update ship cargo. Cannot add 3
                ;; unit(s) to ship cargo. Exceeds max limit of 30.
                4217 (do)
@@ -278,6 +287,15 @@
                     :registration
                     :role
                     (= role)))))
+
+(defn waypoints-of-system [system]
+  (->> @state
+       :waypoints
+       vals
+       (filter #(-> %
+                    :systemSymbol
+                    (= (sym system))))))
+
 
 ;;; GET (refresh, query the api and populate state)
 
@@ -548,9 +566,21 @@
 
 #_(flight-mode! ship "BURN")
 
-;; TODO: implement warp-ship
+(defn warp! [ship destination]
+  (trace "Ship" (sym ship) "warping to" (sym destination))
+  (when-let [response
+             (q :warp-ship {})]
+    ;; TODO: update state
+    response))
 
-;; TODO: implement sell-cargo
+(defn sell-cargo! [ship trade-symbol units]
+  (trace "Ship" (sym ship) "selling" units "units of" trade-symbol)
+  (when-let [response
+             (q :sell-cargo {:shipSymbol (sym ship)
+                             :symbol trade-symbol
+                             :units units})]
+    ;; TODO: update state
+    response))
 
 ;; TODO: add option :on-cooldown
 (defn scan-systems! [ship]

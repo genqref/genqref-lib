@@ -27,3 +27,6 @@
 (defn schedule! [time f]
   (trace "Scheduling function call for" time)
   (swap! schedule assoc time f))
+
+(defn cancel-everything! []
+  (reset! schedule {}))
