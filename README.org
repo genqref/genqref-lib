@@ -14,6 +14,16 @@ Clojure/script, supporting OpenAPI, Swagger, Schema, re-frame and
 more). In order to minimize the number requests it supports a local
 cache persisted through a [[https://github.com/jimpil/duratom][duratom]].
 
+* Usage
+
+*Leiningen/Boot*
+
+~[com.github.genqref/genqref-lib "0.1.0"]~
+
+*Clojure CLI/deps.edn*
+
+~com.github.genqref/genqref-lib {:mvn/version "0.1.0"}~
+
 * Introduction
 
 #+begin_src clojure
