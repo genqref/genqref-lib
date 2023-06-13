@@ -26,40 +26,42 @@
     ],
     "tags": [
         {
-            "description": "Factions",
-            "name": "factions"
-        },
-        {
-            "description": "Fleet",
-            "name": "fleet"
+            "description": "Agents",
+            "name": "Agents"
         },
         {
             "description": "Contracts",
-            "name": "contracts"
+            "name": "Contracts"
+        },
+        {
+            "description": "Factions",
+            "name": "Factions"
+        },
+        {
+            "description": "Fleet",
+            "name": "Fleet"
         },
         {
             "description": "Systems",
-            "name": "systems"
-        },
-        {
-            "description": "Agents",
-            "name": "agents"
+            "name": "Systems"
         }
     ],
     "components": {
         "requestBodies": {},
         "schemas": {
             "Agent": {
-                "description": "",
+                "description": "Agent details.",
                 "type": "object",
                 "properties": {
                     "accountId": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "Account ID that is tied to this agent."
                     },
                     "symbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "Symbol of the agent."
                     },
                     "headquarters": {
                         "type": "string",
@@ -68,6 +70,7 @@
                     },
                     "credits": {
                         "type": "integer",
+                        "format": "int64",
                         "description": "The number of credits the agent has available. Credits can be negative if funds have been overdrawn."
                     },
                     "startingFaction": {
@@ -89,28 +92,32 @@
                 "description": "The chart of a system or waypoint, which makes the location visible to other agents.",
                 "properties": {
                     "waypointSymbol": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "The symbol of the waypoint."
                     },
                     "submittedBy": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "The agent that submitted the chart for this waypoint."
                     },
                     "submittedOn": {
                         "type": "string",
-                        "format": "date-time"
+                        "format": "date-time",
+                        "description": "The time the chart for this waypoint was submitted."
                     }
                 }
             },
             "ConnectedSystem": {
-                "description": "",
                 "type": "object",
                 "properties": {
                     "symbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "The symbol of the system."
                     },
                     "sectorSymbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "The sector of this system."
                     },
                     "type": {
                         "$ref": "#/components/schemas/SystemType"
@@ -120,13 +127,16 @@
                         "description": "The symbol of the faction that owns the connected jump gate in the system."
                     },
                     "x": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "Position in the universe in the x axis."
                     },
                     "y": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "Position in the universe in the y axis."
                     },
                     "distance": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "The distance of this system to the connected Jump Gate."
                     }
                 },
                 "required": [
@@ -139,12 +149,13 @@
                 ]
             },
             "Contract": {
-                "description": "",
+                "description": "Contract details.",
                 "type": "object",
                 "properties": {
                     "id": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "ID of the contract."
                     },
                     "factionSymbol": {
                         "type": "string",
@@ -157,10 +168,12 @@
                             "PROCUREMENT",
                             "TRANSPORT",
                             "SHUTTLE"
-                        ]
+                        ],
+                        "description": "Type of contract."
                     },
                     "terms": {
-                        "$ref": "#/components/schemas/ContractTerms"
+                        "$ref": "#/components/schemas/ContractTerms",
+                        "description": "The terms to fulfill the contract."
                     },
                     "accepted": {
                         "type": "boolean",
@@ -225,6 +238,7 @@
                 ]
             },
             "ContractPayment": {
+                "description": "Payments for the contract.",
                 "type": "object",
                 "properties": {
                     "onAccepted": {
@@ -242,6 +256,7 @@
                 ]
             },
             "ContractTerms": {
+                "description": "The terms to fulfill the contract.",
                 "type": "object",
                 "properties": {
                     "deadline": {
@@ -250,10 +265,12 @@
                         "description": "The deadline for the contract."
                     },
                     "payment": {
-                        "$ref": "#/components/schemas/ContractPayment"
+                        "$ref": "#/components/schemas/ContractPayment",
+                        "description": "Payments for the contract."
                     },
                     "deliver": {
                         "type": "array",
+                        "description": "The cargo that needs to be delivered to fulfill the contract.",
                         "items": {
                             "$ref": "#/components/schemas/ContractDeliverGood"
                         }
@@ -296,15 +313,17 @@
                 ]
             },
             "Extraction": {
-                "description": "",
+                "description": "Extraction details.",
                 "type": "object",
                 "properties": {
                     "shipSymbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "Symbol of the ship that executed the extraction."
                     },
                     "yield": {
-                        "$ref": "#/components/schemas/ExtractionYield"
+                        "$ref": "#/components/schemas/ExtractionYield",
+                        "description": "Yields from the extract operation."
                     }
                 },
                 "required": [
@@ -313,11 +332,12 @@
                 ]
             },
             "ExtractionYield": {
+                "description": "Yields from the extract operation.",
                 "type": "object",
                 "properties": {
                     "symbol": {
-                        "type": "string",
-                        "minLength": 1
+                        "$ref": "#/components/schemas/TradeSymbol",
+                        "description": "Symbol of the good that was extracted."
                     },
                     "units": {
                         "type": "integer",
@@ -330,27 +350,31 @@
                 ]
             },
             "Faction": {
-                "description": "",
+                "description": "Faction details.",
                 "type": "object",
                 "properties": {
                     "symbol": {
-                        "type": "string",
-                        "minLength": 1
+                        "$ref": "#/components/schemas/FactionSymbols",
+                        "description": "Faction symbol."
                     },
                     "name": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "Name of the faction."
                     },
                     "description": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "Description of the faction."
                     },
                     "headquarters": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "The waypoint in which the faction's HQ is located in."
                     },
                     "traits": {
                         "type": "array",
+                        "description": "List of traits that define this faction.",
                         "items": {
                             "$ref": "#/components/schemas/FactionTrait"
                         }
@@ -367,6 +391,35 @@
                     "headquarters",
                     "traits",
                     "isRecruiting"
+                ]
+            },
+            "FactionSymbols": {
+                "type": "string",
+                "description": "Faction symbol.",
+                "minLength": 1,
+                "enum": [
+                    "COSMIC",
+                    "VOID",
+                    "GALACTIC",
+                    "QUANTUM",
+                    "DOMINION",
+                    "ASTRO",
+                    "CORSAIRS",
+                    "OBSIDIAN",
+                    "AEGIS",
+                    "UNITED",
+                    "SOLITARY",
+                    "COBALT",
+                    "OMEGA",
+                    "ECHO",
+                    "LORDS",
+                    "CULT",
+                    "ANCIENTS",
+                    "SHADOW",
+                    "ETHEREAL"
+                ],
+                "examples": [
+                    "COSMIC"
                 ]
             },
             "FactionTrait": {
@@ -595,17 +648,17 @@
                     "units": {
                         "type": "integer",
                         "description": "The number of units of the transaction.",
-                        "minimum": 1
+                        "minimum": 0
                     },
                     "pricePerUnit": {
                         "type": "integer",
                         "description": "The price per unit of the transaction.",
-                        "minimum": 1
+                        "minimum": 0
                     },
                     "totalPrice": {
                         "type": "integer",
                         "description": "The total price of the transaction.",
-                        "minimum": 1
+                        "minimum": 0
                     },
                     "timestamp": {
                         "type": "string",
@@ -622,34 +675,44 @@
                     "pricePerUnit",
                     "totalPrice",
                     "timestamp"
-                ]
+                ],
+                "description": "Result of a transaction with a market."
             },
             "Meta": {
-                "description": "",
+                "description": "Meta details for pagination.",
                 "type": "object",
-                "properties": {
-                    "total": {
-                        "type": "integer"
-                    },
-                    "page": {
-                        "type": "integer"
-                    },
-                    "limit": {
-                        "type": "integer"
-                    }
-                },
-                "required": [
-                    "total",
-                    "page",
-                    "limit"
-                ],
                 "x-examples": {
                     "example-1": {
                         "total": 6,
                         "page": 1,
                         "limit": 20
                     }
-                }
+                },
+                "properties": {
+                    "total": {
+                        "type": "integer",
+                        "description": "Shows the total amount of items of this kind that exist.",
+                        "minimum": 0
+                    },
+                    "page": {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "A page denotes an amount of items, offset from the first item. Each page holds an amount of items equal to the `limit`.",
+                        "minimum": 1
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "The amount of items in each page. Limits how many items can be fetched at once.",
+                        "minimum": 1,
+                        "maximum": 20
+                    }
+                },
+                "required": [
+                    "total",
+                    "page",
+                    "limit"
+                ]
             },
             "ScannedShip": {
                 "description": "The ship that was scanned. Details include information about the ship that could be detected by the scanner.",
@@ -670,7 +733,8 @@
                         "description": "The frame of the ship.",
                         "properties": {
                             "symbol": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "The symbol of the frame."
                             }
                         },
                         "required": [
@@ -682,7 +746,8 @@
                         "description": "The reactor of the ship.",
                         "properties": {
                             "symbol": {
-                                "type": "string"
+                                "type": "string",
+                                "description": "The symbol of the reactor."
                             }
                         },
                         "required": [
@@ -692,23 +757,26 @@
                     "engine": {
                         "type": "object",
                         "description": "The engine of the ship.",
-                        "properties": {
-                            "symbol": {
-                                "type": "string"
-                            }
-                        },
                         "required": [
                             "symbol"
-                        ]
+                        ],
+                        "properties": {
+                            "symbol": {
+                                "type": "string",
+                                "description": "The symbol of the engine."
+                            }
+                        }
                     },
                     "mounts": {
                         "type": "array",
+                        "description": "List of mounts installed in the ship.",
                         "items": {
                             "type": "object",
                             "description": "A mount on the ship.",
                             "properties": {
                                 "symbol": {
-                                    "type": "string"
+                                    "type": "string",
+                                    "description": "The symbol of the mount."
                                 }
                             },
                             "required": [
@@ -725,28 +793,33 @@
                 ]
             },
             "ScannedSystem": {
-                "description": "",
+                "description": "Details of a system was that scanned.",
                 "type": "object",
                 "properties": {
                     "symbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "Symbol of the system."
                     },
                     "sectorSymbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "Symbol of the system's sector."
                     },
                     "type": {
                         "$ref": "#/components/schemas/SystemType"
                     },
                     "x": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "Position in the universe in the x axis."
                     },
                     "y": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "Position in the universe in the y axis."
                     },
                     "distance": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "The system's distance from the scanning ship."
                     }
                 },
                 "required": [
@@ -759,28 +832,33 @@
                 ]
             },
             "ScannedWaypoint": {
-                "description": "A waypoint is a location that ships can travel to such as a Planet, Moon or Space Station.",
+                "description": "A waypoint that was scanned by a ship.",
                 "type": "object",
                 "properties": {
                     "symbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "Symbol of the waypoint."
                     },
                     "type": {
                         "$ref": "#/components/schemas/WaypointType"
                     },
                     "systemSymbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "Symbol of the system."
                     },
                     "x": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "Position in the universe in the x axis."
                     },
                     "y": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "Position in the universe in the y axis."
                     },
                     "orbitals": {
                         "type": "array",
+                        "description": "List of waypoints that orbit this waypoint.",
                         "items": {
                             "$ref": "#/components/schemas/WaypointOrbital"
                         }
@@ -810,12 +888,12 @@
                 ]
             },
             "Ship": {
-                "description": "A ship",
+                "description": "Ship details.",
                 "type": "object",
                 "properties": {
                     "symbol": {
                         "type": "string",
-                        "description": "The globally unique identifier of the ship in the following format: `[AGENT_SYMBOL]_[HEX_ID]`"
+                        "description": "The globally unique identifier of the ship in the following format: `[AGENT_SYMBOL]-[HEX_ID]`"
                     },
                     "registration": {
                         "$ref": "#/components/schemas/ShipRegistration"
@@ -837,12 +915,14 @@
                     },
                     "modules": {
                         "type": "array",
+                        "description": "Modules installed in this ship.",
                         "items": {
                             "$ref": "#/components/schemas/ShipModule"
                         }
                     },
                     "mounts": {
                         "type": "array",
+                        "description": "Mounts installed in this ship.",
                         "items": {
                             "$ref": "#/components/schemas/ShipMount"
                         }
@@ -893,7 +973,8 @@
                     "capacity",
                     "units",
                     "inventory"
-                ]
+                ],
+                "description": "Ship cargo details."
             },
             "ShipCargoItem": {
                 "type": "object",
@@ -987,20 +1068,24 @@
                             "ENGINE_ION_DRIVE_I",
                             "ENGINE_ION_DRIVE_II",
                             "ENGINE_HYPER_DRIVE_I"
-                        ]
+                        ],
+                        "description": "The symbol of the engine."
                     },
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "The name of the engine."
                     },
                     "description": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "The description of the engine."
                     },
                     "condition": {
                         "$ref": "#/components/schemas/ShipCondition"
                     },
                     "speed": {
-                        "type": "number",
-                        "minimum": 1
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "The speed stat of this engine. The higher the speed, the faster a ship can travel from one point to another. Reduces the time of arrival when navigating the ship."
                     },
                     "requirements": {
                         "$ref": "#/components/schemas/ShipRequirements"
@@ -1036,28 +1121,34 @@
                             "FRAME_DESTROYER",
                             "FRAME_CRUISER",
                             "FRAME_CARRIER"
-                        ]
+                        ],
+                        "description": "Symbol of the frame."
                     },
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Name of the frame."
                     },
                     "description": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Description of the frame."
                     },
                     "condition": {
                         "$ref": "#/components/schemas/ShipCondition"
                     },
                     "moduleSlots": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "description": "The amount of slots that can be dedicated to modules installed in the ship. Each installed module take up a number of slots, and once there are no more slots, no new modules can be installed."
                     },
                     "mountingPoints": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "description": "The amount of slots that can be dedicated to mounts installed in the ship. Each installed mount takes up a number of points, and once there are no more points remaining, no new mounts can be installed."
                     },
                     "fuelCapacity": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "description": "The maximum amount of fuel that can be stored in this ship. When refueling, the ship will be refueled to this amount."
                     },
                     "requirements": {
                         "$ref": "#/components/schemas/ShipRequirements"
@@ -1089,6 +1180,7 @@
                     },
                     "consumed": {
                         "type": "object",
+                        "description": "An object that only shows up when an action has consumed fuel in the process. Shows the fuel consumption data.",
                         "properties": {
                             "amount": {
                                 "type": "integer",
@@ -1136,21 +1228,26 @@
                             "MODULE_WARP_DRIVE_III",
                             "MODULE_SHIELD_GENERATOR_I",
                             "MODULE_SHIELD_GENERATOR_II"
-                        ]
+                        ],
+                        "description": "The symbol of the module."
                     },
                     "capacity": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "description": "Modules that provide capacity, such as cargo hold or crew quarters will show this value to denote how much of a bonus the module grants."
                     },
                     "range": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "description": "Modules that have a range will such as a sensor array show this value to denote how far can the module reach with its capabilities."
                     },
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Name of this module."
                     },
                     "description": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Description of this module."
                     },
                     "requirements": {
                         "$ref": "#/components/schemas/ShipRequirements"
@@ -1159,6 +1256,7 @@
                 "required": [
                     "symbol",
                     "name",
+                    "description",
                     "requirements"
                 ]
             },
@@ -1184,20 +1282,25 @@
                             "MOUNT_LASER_CANNON_I",
                             "MOUNT_MISSILE_LAUNCHER_I",
                             "MOUNT_TURRET_I"
-                        ]
+                        ],
+                        "description": "Symbo of this mount."
                     },
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Name of this mount."
                     },
                     "description": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Description of this mount."
                     },
                     "strength": {
                         "type": "integer",
-                        "minimum": 0
+                        "minimum": 0,
+                        "description": "Mounts that have this value, such as mining lasers, denote how powerful this mount's capabilities are."
                     },
                     "deposits": {
                         "type": "array",
+                        "description": "Mounts that have this value denote what goods can be produced from using the mount.",
                         "items": {
                             "type": "string",
                             "enum": [
@@ -1303,20 +1406,24 @@
                 "properties": {
                     "symbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "The symbol of the waypoint."
                     },
                     "type": {
                         "$ref": "#/components/schemas/WaypointType"
                     },
                     "systemSymbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "The symbol of the system the waypoint is in."
                     },
                     "x": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "Position in the universe in the x axis."
                     },
                     "y": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "Position in the universe in the y axis."
                     }
                 },
                 "required": [
@@ -1348,20 +1455,24 @@
                             "REACTOR_FISSION_I",
                             "REACTOR_CHEMICAL_I",
                             "REACTOR_ANTIMATTER_I"
-                        ]
+                        ],
+                        "description": "Symbol of the reactor."
                     },
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Name of the reactor."
                     },
                     "description": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "Description of the reactor."
                     },
                     "condition": {
                         "$ref": "#/components/schemas/ShipCondition"
                     },
                     "powerOutput": {
                         "type": "integer",
-                        "minimum": 1
+                        "minimum": 1,
+                        "description": "The amount of power provided by this reactor. The more power a reactor provides to the ship, the lower the cooldown it gets when using a module or mount that taxes the ship's power."
                     },
                     "requirements": {
                         "$ref": "#/components/schemas/ShipRequirements"
@@ -1438,7 +1549,7 @@
                 ]
             },
             "ShipType": {
-                "description": "",
+                "description": "Type of ship",
                 "type": "string",
                 "enum": [
                     "SHIP_PROBE",
@@ -1546,6 +1657,7 @@
             },
             "ShipyardTransaction": {
                 "type": "object",
+                "description": "Results of a transaction with a shipyard.",
                 "properties": {
                     "waypointSymbol": {
                         "type": "string",
@@ -1553,12 +1665,12 @@
                     },
                     "shipSymbol": {
                         "type": "string",
-                        "description": "The symbol of the ship that was purchased."
+                        "description": "The symbol of the ship that was the subject of the transaction."
                     },
                     "price": {
                         "type": "integer",
                         "description": "The price of the transaction.",
-                        "minimum": 1
+                        "minimum": 0
                     },
                     "agentSymbol": {
                         "type": "string",
@@ -1637,34 +1749,39 @@
                 ]
             },
             "System": {
-                "description": "",
                 "type": "object",
                 "properties": {
                     "symbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "The symbol of the system."
                     },
                     "sectorSymbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "The symbol of the sector."
                     },
                     "type": {
                         "$ref": "#/components/schemas/SystemType"
                     },
                     "x": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "Position in the universe in the x axis."
                     },
                     "y": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "Position in the universe in the y axis."
                     },
                     "waypoints": {
                         "type": "array",
+                        "description": "Waypoints in this system.",
                         "items": {
                             "$ref": "#/components/schemas/SystemWaypoint"
                         }
                     },
                     "factions": {
                         "type": "array",
+                        "description": "Factions that control this system.",
                         "items": {
                             "$ref": "#/components/schemas/SystemFaction"
                         }
@@ -1685,7 +1802,8 @@
                 "properties": {
                     "symbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "The symbol of the faction."
                     }
                 },
                 "required": [
@@ -1712,16 +1830,19 @@
                 "type": "object",
                 "properties": {
                     "symbol": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "The symbol of the waypoint."
                     },
                     "type": {
                         "$ref": "#/components/schemas/WaypointType"
                     },
                     "x": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "Position in the universe in the x axis."
                     },
                     "y": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "Position in the universe in the y axis."
                     }
                 },
                 "required": [
@@ -1733,15 +1854,18 @@
             },
             "TradeGood": {
                 "type": "object",
+                "description": "A good that can be traded for other goods or currency.",
                 "properties": {
                     "symbol": {
                         "$ref": "#/components/schemas/TradeSymbol"
                     },
                     "name": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "The name of the good."
                     },
                     "description": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "The description of the good."
                     }
                 },
                 "required": [
@@ -1863,7 +1987,8 @@
                     "MOUNT_LASER_CANNON_I",
                     "MOUNT_MISSILE_LAUNCHER_I",
                     "MOUNT_TURRET_I"
-                ]
+                ],
+                "description": "The good's symbol."
             },
             "Waypoint": {
                 "description": "A waypoint is a location that ships can travel to such as a Planet, Moon or Space Station.",
@@ -1871,23 +1996,28 @@
                 "properties": {
                     "symbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "Symbol fo the waypoint."
                     },
                     "type": {
                         "$ref": "#/components/schemas/WaypointType"
                     },
                     "systemSymbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "The symbol of the system this waypoint belongs to."
                     },
                     "x": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "Position in the universe in the x axis."
                     },
                     "y": {
-                        "type": "integer"
+                        "type": "integer",
+                        "description": "Position in the universe in the Y axis."
                     },
                     "orbitals": {
                         "type": "array",
+                        "description": "Waypoints that orbit this waypoint.",
                         "items": {
                             "$ref": "#/components/schemas/WaypointOrbital"
                         }
@@ -1918,10 +2048,10 @@
             },
             "WaypointFaction": {
                 "type": "object",
+                "description": "The faction that controls the waypoint.",
                 "properties": {
                     "symbol": {
-                        "type": "string",
-                        "minLength": 1
+                        "$ref": "#/components/schemas/FactionSymbols"
                     }
                 },
                 "required": [
@@ -1934,7 +2064,8 @@
                 "properties": {
                     "symbol": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "The symbol of the orbiting waypoint."
                     }
                 },
                 "required": [
@@ -2051,14 +2182,14 @@
     "paths": {
         "/": {
             "get": {
-                "description": "Return the status of the game server.",
+                "description": "Return the status of the game server.\nThis also includes a few global elements, such as announcements, server reset dates and leaderboards.",
                 "operationId": "get-status",
                 "responses": {
                     "200": {
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "description": "OK",
+                                    "type": "object",
                                     "properties": {
                                         "status": {
                                             "type": "string",
@@ -2077,40 +2208,52 @@
                                         },
                                         "stats": {
                                             "type": "object",
-                                            "properties": {
-                                                "agents": {
-                                                    "type": "integer"
-                                                },
-                                                "ships": {
-                                                    "type": "integer"
-                                                },
-                                                "systems": {
-                                                    "type": "integer"
-                                                },
-                                                "waypoints": {
-                                                    "type": "integer"
-                                                }
-                                            },
                                             "required": [
                                                 "agents",
                                                 "ships",
                                                 "systems",
                                                 "waypoints"
-                                            ]
+                                            ],
+                                            "properties": {
+                                                "agents": {
+                                                    "type": "integer",
+                                                    "description": "Number of registered agents in the game."
+                                                },
+                                                "ships": {
+                                                    "type": "integer",
+                                                    "description": "Total number of ships in the game."
+                                                },
+                                                "systems": {
+                                                    "type": "integer",
+                                                    "description": "Total number of systems in the game."
+                                                },
+                                                "waypoints": {
+                                                    "type": "integer",
+                                                    "description": "Total number of waypoints in the game."
+                                                }
+                                            }
                                         },
                                         "leaderboards": {
                                             "type": "object",
+                                            "required": [
+                                                "mostCredits",
+                                                "mostSubmittedCharts"
+                                            ],
                                             "properties": {
                                                 "mostCredits": {
                                                     "type": "array",
+                                                    "description": "Top agents with the most credits.",
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
                                                             "agentSymbol": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Symbol of the agent."
                                                             },
                                                             "credits": {
-                                                                "type": "integer"
+                                                                "type": "integer",
+                                                                "format": "int64",
+                                                                "description": "Amount of credits."
                                                             }
                                                         },
                                                         "required": [
@@ -2121,14 +2264,17 @@
                                                 },
                                                 "mostSubmittedCharts": {
                                                     "type": "array",
+                                                    "description": "Top agents with the most charted submitted.",
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
                                                             "agentSymbol": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Symbol of the agent."
                                                             },
                                                             "chartCount": {
-                                                                "type": "integer"
+                                                                "type": "integer",
+                                                                "description": "Amount of charts done by the agent."
                                                             }
                                                         },
                                                         "required": [
@@ -2137,14 +2283,14 @@
                                                         ]
                                                     }
                                                 }
-                                            },
-                                            "required": [
-                                                "mostCredits",
-                                                "mostSubmittedCharts"
-                                            ]
+                                            }
                                         },
                                         "serverResets": {
                                             "type": "object",
+                                            "required": [
+                                                "next",
+                                                "frequency"
+                                            ],
                                             "properties": {
                                                 "next": {
                                                     "type": "string",
@@ -2154,11 +2300,7 @@
                                                     "type": "string",
                                                     "description": "How often we intend to reset the game server."
                                                 }
-                                            },
-                                            "required": [
-                                                "next",
-                                                "frequency"
-                                            ]
+                                            }
                                         },
                                         "announcements": {
                                             "type": "array",
@@ -2207,21 +2349,26 @@
                                         "serverResets",
                                         "announcements",
                                         "links"
-                                    ],
-                                    "type": "object"
+                                    ]
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Fetched status successfully."
                     }
                 },
                 "summary": "Get Status",
-                "tags": []
+                "tags": [],
+                "security": [
+                    {},
+                    {
+                        "AgentToken": []
+                    }
+                ]
             }
         },
         "/register": {
             "post": {
-                "description": "Creates a new agent and ties it to a temporary Account.\n\nThe agent symbol is a 3-14 character string that will represent your agent. This symbol will prefix the symbol of every ship you own. Agent symbols will be cast to all uppercase characters.\n\nA new agent will be granted an authorization token, a contract with their starting faction, a command ship with a jump drive, and one hundred thousand credits.\n\n> #### Keep your token safe and secure\n>\n> Save your token during the alpha phase. There is no way to regenerate this token without starting a new agent. In the future you will be able to generate and manage your tokens from the SpaceTraders website.\n\nYou can accept your contract using the `/my/contracts/{contractId}/accept` endpoint. You will want to navigate your command ship to a nearby asteroid field and execute the `/my/ships/{shipSymbol}/extract` endpoint to mine various types of ores and minerals.\n\nReturn to the contract destination and execute the `/my/ships/{shipSymbol}/deliver` endpoint to deposit goods into the contract.\n\nWhen your contract is fulfilled, you can call `/my/contracts/{contractId}/fulfill` to retrieve payment.",
+                "description": "Creates a new agent and ties it to an account. \nThe agent symbol must consist of a 3-14 character string, and will be used to represent your agent. This symbol will prefix the symbol of every ship you own. Agent symbols will be cast to all uppercase characters.\n\nThis new agent will be tied to a starting faction of your choice, which determines your starting location, and will be granted an authorization token, a contract with their starting faction, a command ship that can fly across space with advanced capabilities, a small probe ship that can be used for reconnaissance, and 150,000 credits.\n\n> #### Keep your token safe and secure\n>\n> Save your token during the alpha phase. There is no way to regenerate this token without starting a new agent. In the future you will be able to generate and manage your tokens from the SpaceTraders website.\n\nIf you are new to SpaceTraders, It is recommended to register with the COSMIC faction, a faction that is well connected to the rest of the universe. After registering, you should try our interactive [quickstart guide](https://docs.spacetraders.io/quickstart/new-game) which will walk you through basic API requests in just a few minutes.",
                 "operationId": "register",
                 "requestBody": {
                     "content": {
@@ -2229,17 +2376,11 @@
                             "schema": {
                                 "properties": {
                                     "faction": {
-                                        "description": "The faction you choose determines your headquarters.",
-                                        "enum": [
-                                            "COSMIC",
-                                            "VOID",
-                                            "GALACTIC",
-                                            "QUANTUM",
-                                            "DOMINION"
-                                        ]
+                                        "$ref": "#/components/schemas/FactionSymbols",
+                                        "example": "COSMIC"
                                     },
                                     "symbol": {
-                                        "description": "How other agents will see your ships and information.",
+                                        "description": "Your desired agent symbol. This will be a unique name used to represent your agent, and will be the prefix for your ships.",
                                         "example": "BADGER",
                                         "maxLength": 14,
                                         "minLength": 3,
@@ -2302,16 +2443,22 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Succesfully registered."
                     }
                 },
                 "summary": "Register New Agent",
-                "tags": []
+                "tags": [],
+                "security": [
+                    {},
+                    {
+                        "AgentToken": []
+                    }
+                ]
             }
         },
         "/systems": {
             "get": {
-                "description": "Return a list of all systems.",
+                "description": "Return a paginated list of all systems.",
                 "operationId": "get-systems",
                 "responses": {
                     "200": {
@@ -2338,23 +2485,19 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Successfully listed systems."
                     }
                 },
-                "security": [
-                    {
-                        "AgentToken": []
-                    }
-                ],
                 "summary": "List Systems",
                 "tags": [
-                    "systems"
+                    "Systems"
                 ],
                 "parameters": [
                     {
                         "schema": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "default": 1
                         },
                         "in": "query",
                         "name": "page",
@@ -2364,11 +2507,18 @@
                         "schema": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 20
+                            "maximum": 20,
+                            "default": 10
                         },
                         "in": "query",
                         "name": "limit",
                         "description": "How many entries to return per page"
+                    }
+                ],
+                "security": [
+                    {},
+                    {
+                        "AgentToken": []
                     }
                 ]
             }
@@ -2395,17 +2545,18 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Successfully fetched the system."
                     }
                 },
+                "summary": "Get System",
+                "tags": [
+                    "Systems"
+                ],
                 "security": [
+                    {},
                     {
                         "AgentToken": []
                     }
-                ],
-                "summary": "Get System",
-                "tags": [
-                    "systems"
                 ]
             },
             "parameters": [
@@ -2423,7 +2574,7 @@
         },
         "/systems/{systemSymbol}/waypoints": {
             "get": {
-                "description": "Fetch all of the waypoints for a given system. System must be charted or a ship must be present to return waypoint details.",
+                "description": "Return a paginated list of all of the waypoints for a given system.\n\nIf a waypoint is uncharted, it will return the `Uncharted` trait instead of its actual traits.",
                 "operationId": "get-system-waypoints",
                 "responses": {
                     "200": {
@@ -2450,23 +2601,19 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Successfully fetched all waypoints in the system."
                     }
                 },
-                "security": [
-                    {
-                        "AgentToken": []
-                    }
-                ],
-                "summary": "List Waypoints",
+                "summary": "List Waypoints in System",
                 "tags": [
-                    "systems"
+                    "Systems"
                 ],
                 "parameters": [
                     {
                         "schema": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "default": 1
                         },
                         "in": "query",
                         "name": "page",
@@ -2476,11 +2623,18 @@
                         "schema": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 20
+                            "maximum": 20,
+                            "default": 10
                         },
                         "in": "query",
                         "name": "limit",
                         "description": "How many entries to return per page"
+                    }
+                ],
+                "security": [
+                    {},
+                    {
+                        "AgentToken": []
                     }
                 ]
             },
@@ -2498,7 +2652,7 @@
         },
         "/systems/{systemSymbol}/waypoints/{waypointSymbol}": {
             "get": {
-                "description": "View the details of a waypoint.",
+                "description": "View the details of a waypoint.\n\nIf the waypoint is uncharted, it will return the 'Uncharted' trait instead of its actual traits.",
                 "operationId": "get-waypoint",
                 "responses": {
                     "200": {
@@ -2518,17 +2672,18 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Successfully fetched waypoint."
                     }
                 },
+                "summary": "Get Waypoint",
+                "tags": [
+                    "Systems"
+                ],
                 "security": [
+                    {},
                     {
                         "AgentToken": []
                     }
-                ],
-                "summary": "Get Waypoint",
-                "tags": [
-                    "systems"
                 ]
             },
             "parameters": [
@@ -2554,7 +2709,7 @@
         },
         "/systems/{systemSymbol}/waypoints/{waypointSymbol}/market": {
             "get": {
-                "description": "Retrieve imports, exports and exchange data from a marketplace. Imports can be sold, exports can be purchased, and exchange goods can be purchased or sold. Send a ship to the waypoint to access trade good prices and recent transactions.",
+                "description": "Retrieve imports, exports and exchange data from a marketplace. Requires a waypoint that has the `Marketplace` trait to use.\n\nSend a ship to the waypoint to access trade good prices and recent transactions. Refer to the [Market Overview page](https://docs.spacetraders.io/game-concepts/markets) to gain better a understanding of the market in the game.",
                 "operationId": "get-market",
                 "responses": {
                     "200": {
@@ -2573,17 +2728,18 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Successfully fetched the market."
                     }
                 },
                 "security": [
+                    {},
                     {
                         "AgentToken": []
                     }
                 ],
                 "summary": "Get Market",
                 "tags": [
-                    "systems"
+                    "Systems"
                 ]
             },
             "parameters": [
@@ -2609,7 +2765,7 @@
         },
         "/systems/{systemSymbol}/waypoints/{waypointSymbol}/shipyard": {
             "get": {
-                "description": "Get the shipyard for a waypoint. Send a ship to the waypoint to access ships that are currently available for purchase and recent transactions.",
+                "description": "Get the shipyard for a waypoint. Requires a waypoint that has the `Shipyard` trait to use. Send a ship to the waypoint to access data on ships that are currently available for purchase and recent transactions.",
                 "operationId": "get-shipyard",
                 "responses": {
                     "200": {
@@ -2629,17 +2785,18 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Successfully fetched the shipyard."
                     }
                 },
                 "security": [
+                    {},
                     {
                         "AgentToken": []
                     }
                 ],
                 "summary": "Get Shipyard",
                 "tags": [
-                    "systems"
+                    "Systems"
                 ]
             },
             "parameters": [
@@ -2665,7 +2822,7 @@
         },
         "/systems/{systemSymbol}/waypoints/{waypointSymbol}/jump-gate": {
             "get": {
-                "description": "Get jump gate details for a waypoint.",
+                "description": "Get jump gate details for a waypoint. Requires a waypoint of type `JUMP_GATE` to use.\n\nThe response will return all systems that are have a Jump Gate in range of this Jump Gate. Those systems can be jumped to from this Jump Gate.",
                 "operationId": "get-jump-gate",
                 "responses": {
                     "200": {
@@ -2685,17 +2842,18 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Successfully fetched jump gate."
                     }
                 },
                 "security": [
+                    {},
                     {
                         "AgentToken": []
                     }
                 ],
                 "summary": "Get Jump Gate",
                 "tags": [
-                    "systems"
+                    "Systems"
                 ]
             },
             "parameters": [
@@ -2721,7 +2879,7 @@
         },
         "/factions": {
             "get": {
-                "description": "List all discovered factions in the game.",
+                "description": "Return a paginated list of all the factions in the game.",
                 "operationId": "get-factions",
                 "responses": {
                     "200": {
@@ -2747,18 +2905,19 @@
                                 }
                             }
                         },
-                        "description": ""
+                        "description": "Succesfully fetched factions."
                     }
                 },
                 "summary": "List Factions",
                 "tags": [
-                    "factions"
+                    "Factions"
                 ],
                 "parameters": [
                     {
                         "schema": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "default": 1
                         },
                         "in": "query",
                         "name": "page",
@@ -2768,11 +2927,18 @@
                         "schema": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 20
+                            "maximum": 20,
+                            "default": 10
                         },
                         "in": "query",
                         "name": "limit",
                         "description": "How many entries to return per page"
+                    }
+                ],
+                "security": [
+                    {},
+                    {
+                        "AgentToken": []
                     }
                 ]
             }
@@ -2798,12 +2964,12 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Successfully fetched a faction."
                     }
                 },
                 "summary": "Get Faction",
                 "tags": [
-                    "factions"
+                    "Factions"
                 ]
             },
             "parameters": [
@@ -2813,8 +2979,8 @@
                     "name": "factionSymbol",
                     "required": true,
                     "schema": {
-                        "default": "CGR",
-                        "type": "string"
+                        "type": "string",
+                        "example": "COSMIC"
                     }
                 }
             ]
@@ -2840,7 +3006,7 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Successfully fetched agent details."
                     }
                 },
                 "security": [
@@ -2848,15 +3014,15 @@
                         "AgentToken": []
                     }
                 ],
-                "summary": "My Agent Details",
+                "summary": "Get Agent",
                 "tags": [
-                    "agents"
+                    "Agents"
                 ]
             }
         },
         "/my/contracts": {
             "get": {
-                "description": "List all of your contracts.",
+                "description": "Return a paginated list of all your contracts.",
                 "operationId": "get-contracts",
                 "responses": {
                     "200": {
@@ -2883,7 +3049,7 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Succesfully listed contracts."
                     }
                 },
                 "security": [
@@ -2893,13 +3059,14 @@
                 ],
                 "summary": "List Contracts",
                 "tags": [
-                    "contracts"
+                    "Contracts"
                 ],
                 "parameters": [
                     {
                         "schema": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "default": 1
                         },
                         "in": "query",
                         "name": "page",
@@ -2909,7 +3076,8 @@
                         "schema": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 20
+                            "maximum": 20,
+                            "default": 10
                         },
                         "in": "query",
                         "name": "limit",
@@ -2939,7 +3107,7 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Successfully fetched contract."
                     }
                 },
                 "security": [
@@ -2949,7 +3117,7 @@
                 ],
                 "summary": "Get Contract",
                 "tags": [
-                    "contracts"
+                    "Contracts"
                 ]
             },
             "parameters": [
@@ -2967,6 +3135,7 @@
         "/my/contracts/{contractId}/accept": {
             "parameters": [
                 {
+                    "description": "The contract ID to accept.",
                     "in": "path",
                     "name": "contractId",
                     "required": true,
@@ -2976,7 +3145,7 @@
                 }
             ],
             "post": {
-                "description": "Accept a contract.",
+                "description": "Accept a contract by ID. \n\nYou can only accept contracts that were offered to you, were not accepted yet, and whose deadlines has not passed yet.",
                 "operationId": "accept-contract",
                 "responses": {
                     "200": {
@@ -3007,7 +3176,7 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Succesfully accepted contract."
                     }
                 },
                 "security": [
@@ -3017,24 +3186,24 @@
                 ],
                 "summary": "Accept Contract",
                 "tags": [
-                    "contracts"
+                    "Contracts"
                 ]
             }
         },
         "/my/contracts/{contractId}/deliver": {
             "parameters": [
                 {
-                    "description": "The ID of the contract",
-                    "in": "path",
-                    "name": "contractId",
-                    "required": true,
                     "schema": {
                         "type": "string"
-                    }
+                    },
+                    "name": "contractId",
+                    "in": "path",
+                    "required": true,
+                    "description": "The ID of the contract."
                 }
             ],
             "post": {
-                "description": "Deliver cargo on a given contract.",
+                "description": "Deliver cargo to a contract.\n\nIn order to use this API, a ship must be at the delivery location (denoted in the delivery terms as `destinationSymbol` of a contract) and must have a number of units of a good required by this contract in its cargo.\n\nCargo that was delivered will be removed from the ship's cargo.",
                 "operationId": "deliver-contract",
                 "requestBody": {
                     "content": {
@@ -3042,13 +3211,16 @@
                             "schema": {
                                 "properties": {
                                     "shipSymbol": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "description": "Symbol of a ship located in the destination to deliver a contract and that has a good to deliver in its cargo."
                                     },
                                     "tradeSymbol": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "description": "The symbol of the good to deliver."
                                     },
                                     "units": {
-                                        "type": "integer"
+                                        "type": "integer",
+                                        "description": "Amount of units to deliver."
                                     }
                                 },
                                 "required": [
@@ -3059,7 +3231,8 @@
                                 "type": "object"
                             }
                         }
-                    }
+                    },
+                    "description": ""
                 },
                 "responses": {
                     "200": {
@@ -3091,7 +3264,7 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Successfully delivered cargo to contract."
                     }
                 },
                 "security": [
@@ -3099,16 +3272,16 @@
                         "AgentToken": []
                     }
                 ],
-                "summary": "Deliver Contract",
+                "summary": "Deliver Cargo to Contract",
                 "tags": [
-                    "contracts"
+                    "Contracts"
                 ]
             }
         },
         "/my/contracts/{contractId}/fulfill": {
             "parameters": [
                 {
-                    "description": "The ID of the contract",
+                    "description": "The ID of the contract to fulfill.",
                     "in": "path",
                     "name": "contractId",
                     "required": true,
@@ -3118,7 +3291,7 @@
                 }
             ],
             "post": {
-                "description": "Fulfill a contract",
+                "description": "Fulfill a contract. Can only be used on contracts that have all of their delivery terms fulfilled.",
                 "operationId": "fulfill-contract",
                 "responses": {
                     "200": {
@@ -3150,7 +3323,7 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Successfully fulfilled a contract."
                     }
                 },
                 "security": [
@@ -3160,13 +3333,13 @@
                 ],
                 "summary": "Fulfill Contract",
                 "tags": [
-                    "contracts"
+                    "Contracts"
                 ]
             }
         },
         "/my/ships": {
             "get": {
-                "description": "Retrieve all of your ships.",
+                "description": "Return a paginated list of all of ships under your agent's ownership.",
                 "operationId": "get-my-ships",
                 "responses": {
                     "200": {
@@ -3193,7 +3366,7 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Succesfully listed ships."
                     }
                 },
                 "security": [
@@ -3203,13 +3376,14 @@
                 ],
                 "summary": "List Ships",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ],
                 "parameters": [
                     {
                         "schema": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "default": 1
                         },
                         "in": "query",
                         "name": "page",
@@ -3219,7 +3393,8 @@
                         "schema": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 20
+                            "maximum": 20,
+                            "default": 10
                         },
                         "in": "query",
                         "name": "limit",
@@ -3228,7 +3403,7 @@
                 ]
             },
             "post": {
-                "description": "Purchase a ship",
+                "description": "Purchase a ship from a Shipyard. In order to use this function, a ship under your agent's ownership must be in a waypoint that has the `Shipyard` trait, and the Shipyard must sell the type of the desired ship.\n\nShipyards typically offer ship types, which are predefined templates of ships that have dedicated roles. A template comes with a preset of an engine, a reactor, and a frame. It may also include a few modules and mounts.",
                 "operationId": "purchase-ship",
                 "requestBody": {
                     "content": {
@@ -3286,7 +3461,7 @@
                                 }
                             }
                         },
-                        "description": "Created"
+                        "description": "Purchased ship successfully."
                     }
                 },
                 "security": [
@@ -3296,13 +3471,13 @@
                 ],
                 "summary": "Purchase Ship",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
         "/my/ships/{shipSymbol}": {
             "get": {
-                "description": "Retrieve the details of your ship.",
+                "description": "Retrieve the details of a ship under your agent's ownership.",
                 "operationId": "get-my-ship",
                 "responses": {
                     "200": {
@@ -3322,7 +3497,7 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Successfully fetched ship."
                     }
                 },
                 "security": [
@@ -3332,11 +3507,12 @@
                 ],
                 "summary": "Get Ship",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             },
             "parameters": [
                 {
+                    "description": "The symbol of the ship.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -3349,7 +3525,7 @@
         "/my/ships/{shipSymbol}/cargo": {
             "parameters": [
                 {
-                    "description": "The symbol of the ship",
+                    "description": "The symbol of the ship.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -3359,7 +3535,7 @@
                 }
             ],
             "get": {
-                "description": "Retrieve the cargo of your ship.",
+                "description": "Retrieve the cargo of a ship under your agent's ownership.",
                 "operationId": "get-my-ship-cargo",
                 "responses": {
                     "200": {
@@ -3379,7 +3555,7 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Successfully fetched ship's cargo."
                     }
                 },
                 "security": [
@@ -3389,14 +3565,14 @@
                 ],
                 "summary": "Get Ship Cargo",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
         "/my/ships/{shipSymbol}/orbit": {
             "parameters": [
                 {
-                    "description": "The symbol of the ship",
+                    "description": "The symbol of the ship.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -3406,7 +3582,7 @@
                 }
             ],
             "post": {
-                "description": "Attempt to move your ship into orbit at it's current location. The request will only succeed if your ship is capable of moving into orbit at the time of the request.\n\nThe endpoint is idempotent - successive calls will succeed even if the ship is already in orbit.",
+                "description": "Attempt to move your ship into orbit at its current location. The request will only succeed if your ship is capable of moving into orbit at the time of the request.\n\nOrbiting ships are able to do actions that require the ship to be above surface such as navigating or extracting, but cannot access elements in their current waypoint, such as the market or a shipyard.\n\nThe endpoint is idempotent - successive calls will succeed even if the ship is already in orbit.",
                 "operationId": "orbit-ship",
                 "responses": {
                     "200": {
@@ -3435,7 +3611,7 @@
                                 }
                             }
                         },
-                        "description": "The ship has successfully moved into orbit at it's current location."
+                        "description": "The ship has successfully moved into orbit at its current location."
                     }
                 },
                 "security": [
@@ -3445,14 +3621,14 @@
                 ],
                 "summary": "Orbit Ship",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
         "/my/ships/{shipSymbol}/refine": {
             "parameters": [
                 {
-                    "description": "The symbol of the ship",
+                    "description": "The symbol of the ship.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -3462,14 +3638,16 @@
                 }
             ],
             "post": {
-                "description": "Attempt to refine the raw materials on your ship. The request will only succeed if your ship is capable of refining at the time of the request.",
+                "description": "Attempt to refine the raw materials on your ship. The request will only succeed if your ship is capable of refining at the time of the request. In order to be able to refine, a ship must have goods that can be refined and have installed a `Refinery` module that can refine it.\n\nWhen refining, 30 basic goods will be converted into 10 processed goods.",
                 "operationId": "ship-refine",
                 "requestBody": {
                     "content": {
                         "application/json": {
                             "schema": {
+                                "type": "object",
                                 "properties": {
                                     "produce": {
+                                        "description": "The type of good to produce out of the refining process.",
                                         "type": "string",
                                         "enum": [
                                             "IRON",
@@ -3486,8 +3664,7 @@
                                 },
                                 "required": [
                                     "produce"
-                                ],
-                                "type": "object"
+                                ]
                             }
                         }
                     }
@@ -3498,9 +3675,16 @@
                             "application/json": {
                                 "schema": {
                                     "title": "Ship Refine 200 Response",
-                                    "description": "",
+                                    "type": "object",
                                     "properties": {
                                         "data": {
+                                            "type": "object",
+                                            "required": [
+                                                "cargo",
+                                                "cooldown",
+                                                "produced",
+                                                "consumed"
+                                            ],
                                             "properties": {
                                                 "cargo": {
                                                     "$ref": "#/components/schemas/ShipCargo"
@@ -3510,50 +3694,48 @@
                                                 },
                                                 "produced": {
                                                     "type": "array",
+                                                    "description": "Goods that were produced by this refining process.",
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
                                                             "tradeSymbol": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Symbol of the good."
                                                             },
                                                             "units": {
-                                                                "type": "integer"
+                                                                "type": "integer",
+                                                                "description": "Amount of units of the good."
                                                             }
                                                         }
                                                     }
                                                 },
                                                 "consumed": {
                                                     "type": "array",
+                                                    "description": "Goods that were consumed during this refining process.",
                                                     "items": {
                                                         "type": "object",
                                                         "properties": {
                                                             "tradeSymbol": {
-                                                                "type": "string"
+                                                                "type": "string",
+                                                                "description": "Symbol of the good."
                                                             },
                                                             "units": {
-                                                                "type": "integer"
+                                                                "type": "integer",
+                                                                "description": "Amount of units of the good."
                                                             }
                                                         }
                                                     }
                                                 }
-                                            },
-                                            "type": "object",
-                                            "required": [
-                                                "cargo",
-                                                "cooldown",
-                                                "produced",
-                                                "consumed"
-                                            ]
+                                            }
                                         }
                                     },
                                     "required": [
                                         "data"
-                                    ],
-                                    "type": "object"
+                                    ]
                                 }
                             }
                         },
-                        "description": "The ship has successfully started refining."
+                        "description": "The ship has successfully refined goods."
                     }
                 },
                 "security": [
@@ -3563,14 +3745,14 @@
                 ],
                 "summary": "Ship Refine",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
         "/my/ships/{shipSymbol}/chart": {
             "parameters": [
                 {
-                    "description": "The symbol of the ship",
+                    "description": "The symbol of the ship.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -3580,7 +3762,7 @@
                 }
             ],
             "post": {
-                "description": "Command a ship to chart the current waypoint.\n\nWaypoints in the universe are uncharted by default. These locations will not show up in the API until they have been charted by a ship.\n\nCharting a location will record your agent as the one who created the chart.",
+                "description": "Command a ship to chart the waypoint at its current location.\n\nMost waypoints in the universe are uncharted by default. These waypoints have their traits hidden until they have been charted by a ship.\n\nCharting a waypoint will record your agent as the one who created the chart, and all other agents would also be able to see the waypoint's traits.",
                 "operationId": "create-chart",
                 "responses": {
                     "201": {
@@ -3621,7 +3803,7 @@
                 ],
                 "summary": "Create Chart",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
@@ -3647,10 +3829,10 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Succesfully fetched ship's cooldown."
                     },
                     "204": {
-                        "description": "No cooldown"
+                        "description": "No cooldown."
                     }
                 },
                 "security": [
@@ -3660,11 +3842,12 @@
                 ],
                 "summary": "Get Ship Cooldown",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             },
             "parameters": [
                 {
+                    "description": "The symbol of the ship.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -3677,7 +3860,7 @@
         "/my/ships/{shipSymbol}/dock": {
             "parameters": [
                 {
-                    "description": "The symbol of the ship",
+                    "description": "The symbol of the ship.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -3687,7 +3870,7 @@
                 }
             ],
             "post": {
-                "description": "Attempt to dock your ship at it's current location. Docking will only succeed if the waypoint is a dockable location, and your ship is capable of docking at the time of the request.\n\nThe endpoint is idempotent - successive calls will succeed even if the ship is already docked.",
+                "description": "Attempt to dock your ship at its current location. Docking will only succeed if your ship is capable of docking at the time of the request.\n\nDocked ships can access elements in their current location, such as the market or a shipyard, but cannot do actions that require the ship to be above surface such as navigating or extracting.\n\nThe endpoint is idempotent - successive calls will succeed even if the ship is already docked.",
                 "operationId": "dock-ship",
                 "responses": {
                     "200": {
@@ -3716,7 +3899,7 @@
                                 }
                             }
                         },
-                        "description": "The ship has successfully docked at it's current location."
+                        "description": "The ship has successfully docked at its current location."
                     }
                 },
                 "security": [
@@ -3726,14 +3909,14 @@
                 ],
                 "summary": "Dock Ship",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
         "/my/ships/{shipSymbol}/survey": {
             "parameters": [
                 {
-                    "description": "The symbol of the ship",
+                    "description": "The symbol of the ship.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -3743,41 +3926,42 @@
                 }
             ],
             "post": {
-                "description": "If you want to target specific yields for an extraction, you can survey a waypoint, such as an asteroid field, and send the survey in the body of the extract request. Each survey may have multiple deposits, and if a symbol shows up more than once, that indicates a higher chance of extracting that resource.\n\nYour ship will enter a cooldown between consecutive survey requests. Surveys will eventually expire after a period of time. Multiple ships can use the same survey for extraction.",
+                "description": "Create surveys on a waypoint that can be extracted such as asteroid fields. A survey focuses on specific types of deposits from the extracted location. When ships extract using this survey, they are guaranteed to procure a high amount of one of the goods in the survey.\n\nIn order to use a survey, send the entire survey details in the body of the extract request.\n\nEach survey may have multiple deposits, and if a symbol shows up more than once, that indicates a higher chance of extracting that resource.\n\nYour ship will enter a cooldown after surveying in which it is unable to perform certain actions. Surveys will eventually expire after a period of time or will be exhausted after being extracted several times based on the survey's size. Multiple ships can use the same survey for extraction.\n\nA ship must have the `Surveyor` mount installed in order to use this function.",
                 "operationId": "create-survey",
                 "responses": {
                     "201": {
                         "content": {
                             "application/json": {
                                 "schema": {
+                                    "type": "object",
                                     "properties": {
                                         "data": {
+                                            "type": "object",
+                                            "required": [
+                                                "cooldown",
+                                                "surveys"
+                                            ],
                                             "properties": {
                                                 "cooldown": {
                                                     "$ref": "#/components/schemas/Cooldown"
                                                 },
                                                 "surveys": {
+                                                    "type": "array",
+                                                    "description": "Surveys created by this action.",
                                                     "items": {
                                                         "$ref": "#/components/schemas/Survey"
-                                                    },
-                                                    "type": "array"
+                                                    }
                                                 }
-                                            },
-                                            "required": [
-                                                "surveys",
-                                                "cooldown"
-                                            ],
-                                            "type": "object"
+                                            }
                                         }
                                     },
-                                    "type": "object",
                                     "required": [
                                         "data"
                                     ]
                                 }
                             }
                         },
-                        "description": "Created"
+                        "description": "Surveys has been created."
                     }
                 },
                 "security": [
@@ -3787,14 +3971,14 @@
                 ],
                 "summary": "Create Survey",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
         "/my/ships/{shipSymbol}/extract": {
             "parameters": [
                 {
-                    "description": "The ship symbol",
+                    "description": "The ship symbol.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -3804,7 +3988,7 @@
                 }
             ],
             "post": {
-                "description": "Extract resources from the waypoint into your ship. Send an optional survey as the payload to target specific yields.",
+                "description": "Extract resources from a waypoint that can be extracted, such as asteroid fields, into your ship. Send an optional survey as the payload to target specific yields.\n\nThe ship must be in orbit to be able to extract and must have mining equipments installed that can extract goods, such as the `Gas Siphon` mount for gas-based goods or `Mining Laser` mount for ore-based goods.",
                 "operationId": "extract-resources",
                 "requestBody": {
                     "content": {
@@ -3854,7 +4038,7 @@
                                 }
                             }
                         },
-                        "description": "Created"
+                        "description": "Extracted successfully."
                     }
                 },
                 "security": [
@@ -3864,13 +4048,14 @@
                 ],
                 "summary": "Extract Resources",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
         "/my/ships/{shipSymbol}/jettison": {
             "parameters": [
                 {
+                    "description": "The ship symbol.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -3886,20 +4071,21 @@
                     "content": {
                         "application/json": {
                             "schema": {
+                                "type": "object",
                                 "properties": {
                                     "symbol": {
-                                        "type": "string"
+                                        "$ref": "#/components/schemas/TradeSymbol"
                                     },
                                     "units": {
                                         "minimum": 1,
-                                        "type": "integer"
+                                        "type": "integer",
+                                        "description": "Amount of units to jettison of this good."
                                     }
                                 },
                                 "required": [
                                     "symbol",
                                     "units"
-                                ],
-                                "type": "object"
+                                ]
                             }
                         }
                     }
@@ -3930,7 +4116,7 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Jettison successful."
                     }
                 },
                 "security": [
@@ -3940,13 +4126,14 @@
                 ],
                 "summary": "Jettison Cargo",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
         "/my/ships/{shipSymbol}/jump": {
             "parameters": [
                 {
+                    "description": "The ship symbol.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -3956,7 +4143,7 @@
                 }
             ],
             "post": {
-                "description": "Jump your ship instantly to a target system. Unlike other forms of navigation, jumping requires a unit of antimatter.",
+                "description": "Jump your ship instantly to a target system. The ship must be in orbit to use this function. When used while in orbit of a Jump Gate waypoint, any ship can use this command, jumping to the target system's Jump Gate waypoint.\n\nWhen used elsewhere, jumping requires the ship to have a `Jump Drive` module installed and consumes a unit of antimatter from the ship's cargo. The command will fail if there is no antimatter to consume. When jumping via the `Jump Drive` module, the ship ends up at its largest source of energy in the system, such as a gas planet or a jump gate.",
                 "operationId": "jump-ship",
                 "requestBody": {
                     "content": {
@@ -3993,7 +4180,7 @@
                                                 }
                                             },
                                             "required": [
-                                                "route",
+                                                "nav",
                                                 "cooldown"
                                             ],
                                             "type": "object"
@@ -4006,7 +4193,7 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Jump successful."
                     }
                 },
                 "security": [
@@ -4016,14 +4203,14 @@
                 ],
                 "summary": "Jump Ship",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
         "/my/ships/{shipSymbol}/navigate": {
             "parameters": [
                 {
-                    "description": "The ship symbol",
+                    "description": "The ship symbol.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -4033,7 +4220,7 @@
                 }
             ],
             "post": {
-                "description": "Navigate to a target destination. The destination must be located within the same system as the ship. Navigating will consume the necessary fuel and supplies from the ship's manifest, and will pay out crew wages from the agent's account.\n\nThe returned response will detail the route information including the expected time of arrival. Most ship actions are unavailable until the ship has arrived at it's destination.\n\nTo travel between systems, see the ship's warp or jump actions.",
+                "description": "Navigate to a target destination. The ship must be in orbit to use this function. The destination waypoint must be within the same system as the ship's current location. Navigating will consume the necessary fuel from the ship's manifest based on the distance to the target waypoint.\n\nThe returned response will detail the route information including the expected time of arrival. Most ship actions are unavailable until the ship has arrived at it's destination.\n\nTo travel between systems, see the ship's Warp or Jump actions.",
                 "operationId": "navigate-ship",
                 "requestBody": {
                     "content": {
@@ -4084,7 +4271,7 @@
                                 }
                             }
                         },
-                        "description": "The successful transit information including the route details and changes to ship fuel, supplies, and crew wages paid. The route includes the expected time of arrival."
+                        "description": "The successful transit information including the route details and changes to ship fuel. The route includes the expected time of arrival."
                     }
                 },
                 "security": [
@@ -4094,14 +4281,14 @@
                 ],
                 "summary": "Navigate Ship",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
         "/my/ships/{shipSymbol}/nav": {
             "parameters": [
                 {
-                    "description": "The ship symbol",
+                    "description": "The ship symbol.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -4111,7 +4298,7 @@
                 }
             ],
             "patch": {
-                "description": "Update the nav data of a ship, such as the flight mode.",
+                "description": "Update the nav configuration of a ship.\n\nCurrently only supports configuring the Flight Mode of the ship, which affects its speed and fuel consumption.",
                 "operationId": "patch-ship-nav",
                 "requestBody": {
                     "content": {
@@ -4145,7 +4332,7 @@
                                 }
                             }
                         },
-                        "description": "The updated nav status of the ship."
+                        "description": "The updated nav data of the ship."
                     }
                 },
                 "security": [
@@ -4155,7 +4342,7 @@
                 ],
                 "summary": "Patch Ship Nav",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             },
             "get": {
@@ -4189,13 +4376,14 @@
                 ],
                 "summary": "Get Ship Nav",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
         "/my/ships/{shipSymbol}/warp": {
             "parameters": [
                 {
+                    "description": "The ship symbol.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -4205,7 +4393,7 @@
                 }
             ],
             "post": {
-                "description": "Warp your ship to a target destination in another system. Warping will consume the necessary fuel and supplies from the ship's manifest, and will pay out crew wages from the agent's account.\n\nThe returned response will detail the route information including the expected time of arrival. Most ship actions are unavailable until the ship has arrived at it's destination.",
+                "description": "Warp your ship to a target destination in another system. The ship must be in orbit to use this function and must have the `Warp Drive` module installed. Warping will consume the necessary fuel from the ship's manifest.\n\nThe returned response will detail the route information including the expected time of arrival. Most ship actions are unavailable until the ship has arrived at its destination.",
                 "operationId": "warp-ship",
                 "requestBody": {
                     "content": {
@@ -4256,7 +4444,7 @@
                                 }
                             }
                         },
-                        "description": "The successful transit information including the route details and changes to ship fuel, supplies, and crew wages paid. The route includes the expected time of arrival."
+                        "description": "The successful transit information including the route details and changes to ship fuel. The route includes the expected time of arrival."
                     }
                 },
                 "security": [
@@ -4266,7 +4454,7 @@
                 ],
                 "summary": "Warp Ship",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
@@ -4278,30 +4466,32 @@
                     "required": true,
                     "schema": {
                         "type": "string"
-                    }
+                    },
+                    "description": "Symbol of a ship."
                 }
             ],
             "post": {
-                "description": "Sell cargo.",
+                "description": "Sell cargo in your ship to a market that trades this cargo. The ship must be docked in a waypoint that has the `Marketplace` trait in order to use this function.",
                 "operationId": "sell-cargo",
                 "requestBody": {
                     "content": {
                         "application/json": {
                             "schema": {
                                 "title": "SellCargoRequest",
+                                "type": "object",
                                 "properties": {
                                     "symbol": {
-                                        "type": "string"
+                                        "$ref": "#/components/schemas/TradeSymbol"
                                     },
                                     "units": {
-                                        "type": "integer"
+                                        "type": "integer",
+                                        "description": "Amounts of units to sell of the selected good."
                                     }
                                 },
                                 "required": [
                                     "symbol",
                                     "units"
-                                ],
-                                "type": "object"
+                                ]
                             }
                         }
                     }
@@ -4341,7 +4531,7 @@
                                 }
                             }
                         },
-                        "description": "Created"
+                        "description": "Cargo was successfully sold."
                     }
                 },
                 "security": [
@@ -4351,13 +4541,14 @@
                 ],
                 "summary": "Sell Cargo",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
         "/my/ships/{shipSymbol}/scan/systems": {
             "parameters": [
                 {
+                    "description": "The ship symbol.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -4367,42 +4558,42 @@
                 }
             ],
             "post": {
-                "description": "Activate your ship's sensor arrays to scan for system information.",
+                "description": "Scan for nearby systems, retrieving information on the systems' distance from the ship and their waypoints. Requires a ship to have the `Sensor Array` mount installed to use.\n\nThe ship will enter a cooldown after using this function, during which it cannot execute certain actions.",
                 "operationId": "create-ship-system-scan",
                 "responses": {
                     "201": {
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "description": "",
+                                    "type": "object",
                                     "properties": {
                                         "data": {
+                                            "type": "object",
+                                            "required": [
+                                                "cooldown",
+                                                "systems"
+                                            ],
                                             "properties": {
                                                 "cooldown": {
                                                     "$ref": "#/components/schemas/Cooldown"
                                                 },
                                                 "systems": {
+                                                    "type": "array",
+                                                    "description": "List of scanned systems.",
                                                     "items": {
                                                         "$ref": "#/components/schemas/ScannedSystem"
-                                                    },
-                                                    "type": "array"
+                                                    }
                                                 }
-                                            },
-                                            "required": [
-                                                "cooldown",
-                                                "systems"
-                                            ],
-                                            "type": "object"
+                                            }
                                         }
                                     },
                                     "required": [
                                         "data"
-                                    ],
-                                    "type": "object"
+                                    ]
                                 }
                             }
                         },
-                        "description": "Created"
+                        "description": "Successfully scanned for nearby systems."
                     }
                 },
                 "security": [
@@ -4412,13 +4603,14 @@
                 ],
                 "summary": "Scan Systems",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
         "/my/ships/{shipSymbol}/scan/waypoints": {
             "parameters": [
                 {
+                    "description": "The ship symbol.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -4428,42 +4620,42 @@
                 }
             ],
             "post": {
-                "description": "Activate your ship's sensor arrays to scan for waypoint information.",
+                "description": "Scan for nearby waypoints, retrieving detailed information on each waypoint in range. Scanning uncharted waypoints will allow you to ignore their uncharted state and will list the waypoints' traits.\n\nRequires a ship to have the `Sensor Array` mount installed to use.\n\nThe ship will enter a cooldown after using this function, during which it cannot execute certain actions.",
                 "operationId": "create-ship-waypoint-scan",
                 "responses": {
                     "201": {
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "description": "",
+                                    "type": "object",
                                     "properties": {
                                         "data": {
+                                            "type": "object",
+                                            "required": [
+                                                "cooldown",
+                                                "waypoints"
+                                            ],
                                             "properties": {
                                                 "cooldown": {
                                                     "$ref": "#/components/schemas/Cooldown"
                                                 },
                                                 "waypoints": {
+                                                    "type": "array",
+                                                    "description": "List of scanned waypoints.",
                                                     "items": {
                                                         "$ref": "#/components/schemas/ScannedWaypoint"
-                                                    },
-                                                    "type": "array"
+                                                    }
                                                 }
-                                            },
-                                            "required": [
-                                                "cooldown",
-                                                "waypoints"
-                                            ],
-                                            "type": "object"
+                                            }
                                         }
                                     },
                                     "required": [
                                         "data"
-                                    ],
-                                    "type": "object"
+                                    ]
                                 }
                             }
                         },
-                        "description": "Created"
+                        "description": "Successfully scanned for nearby waypoints."
                     }
                 },
                 "security": [
@@ -4473,13 +4665,14 @@
                 ],
                 "summary": "Scan Waypoints",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
         "/my/ships/{shipSymbol}/scan/ships": {
             "parameters": [
                 {
+                    "description": "The ship symbol.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -4489,42 +4682,42 @@
                 }
             ],
             "post": {
-                "description": "Activate your ship's sensor arrays to scan for ship information.",
+                "description": "Scan for nearby ships, retrieving information for all ships in range.\n\nRequires a ship to have the `Sensor Array` mount installed to use.\n\nThe ship will enter a cooldown after using this function, during which it cannot execute certain actions.",
                 "operationId": "create-ship-ship-scan",
                 "responses": {
                     "201": {
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "description": "",
+                                    "type": "object",
                                     "properties": {
                                         "data": {
+                                            "type": "object",
+                                            "required": [
+                                                "cooldown",
+                                                "ships"
+                                            ],
                                             "properties": {
                                                 "cooldown": {
                                                     "$ref": "#/components/schemas/Cooldown"
                                                 },
                                                 "ships": {
+                                                    "type": "array",
+                                                    "description": "List of scanned ships.",
                                                     "items": {
                                                         "$ref": "#/components/schemas/ScannedShip"
-                                                    },
-                                                    "type": "array"
+                                                    }
                                                 }
-                                            },
-                                            "required": [
-                                                "cooldown",
-                                                "ships"
-                                            ],
-                                            "type": "object"
+                                            }
                                         }
                                     },
                                     "required": [
                                         "data"
-                                    ],
-                                    "type": "object"
+                                    ]
                                 }
                             }
                         },
-                        "description": "Created"
+                        "description": "Successfully scanned for nearby ships."
                     }
                 },
                 "security": [
@@ -4534,13 +4727,14 @@
                 ],
                 "summary": "Scan Ships",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
         "/my/ships/{shipSymbol}/refuel": {
             "parameters": [
                 {
+                    "description": "The ship symbol.",
                     "in": "path",
                     "name": "shipSymbol",
                     "required": true,
@@ -4550,7 +4744,7 @@
                 }
             ],
             "post": {
-                "description": "Refuel your ship from the local market.",
+                "description": "Refuel your ship by buying fuel from the local market.\n\nRequires the ship to be docked in a waypoint that has the `Marketplace` trait, and the market must be selling fuel in order to refuel.\n\nEach fuel bought from the market replenishes 100 units in your ship's fuel.\n\nShips will always be refuel to their frame's maximum fuel capacity when using this action.",
                 "operationId": "refuel-ship",
                 "responses": {
                     "200": {
@@ -4586,7 +4780,7 @@
                                 }
                             }
                         },
-                        "description": "OK"
+                        "description": "Refueled successfully."
                     }
                 },
                 "security": [
@@ -4596,7 +4790,7 @@
                 ],
                 "summary": "Refuel Ship",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
@@ -4608,30 +4802,32 @@
                     "required": true,
                     "schema": {
                         "type": "string"
-                    }
+                    },
+                    "description": "The ship's symbol."
                 }
             ],
             "post": {
-                "description": "Purchase cargo.",
+                "description": "Purchase cargo from a market.\n\nThe ship must be docked in a waypoint that has `Marketplace` trait, and the market must be selling a good to be able to purchase it.\n\nThe maximum amount of units of a good that can be purchased in each transaction are denoted by the `tradeVolume` value of the good, which can be viewed by using the Get Market action.\n\nPurchased goods are added to the ship's cargo hold.",
                 "operationId": "purchase-cargo",
                 "requestBody": {
                     "content": {
                         "application/json": {
                             "schema": {
                                 "title": "Purchase Cargo Request",
+                                "type": "object",
                                 "properties": {
                                     "symbol": {
-                                        "type": "string"
+                                        "$ref": "#/components/schemas/TradeSymbol"
                                     },
                                     "units": {
-                                        "type": "integer"
+                                        "type": "integer",
+                                        "description": "Amounts of units to purchase."
                                     }
                                 },
                                 "required": [
                                     "symbol",
                                     "units"
-                                ],
-                                "type": "object"
+                                ]
                             }
                         }
                     }
@@ -4671,7 +4867,7 @@
                                 }
                             }
                         },
-                        "description": "Created"
+                        "description": "Purchased goods successfully."
                     }
                 },
                 "security": [
@@ -4681,7 +4877,7 @@
                 ],
                 "summary": "Purchase Cargo",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
@@ -4689,38 +4885,41 @@
             "parameters": [
                 {
                     "in": "path",
-                    "name": "shipSymbol2",
+                    "name": "shipSymbol",
                     "required": true,
                     "schema": {
                         "type": "string"
-                    }
+                    },
+                    "description": "The transferring ship's symbol."
                 }
             ],
             "post": {
-                "description": "Transfer cargo between ships.",
+                "description": "Transfer cargo between ships.\n\nThe receiving ship must be in the same waypoint as the transferring ship, and it must able to hold the additional cargo after the transfer is complete. Both ships also must be in the same state, either both are docked or both are orbiting.\n\nThe response body's cargo shows the cargo of the transferring ship after the transfer is complete.",
                 "operationId": "transfer-cargo",
                 "requestBody": {
                     "content": {
                         "application/json": {
                             "schema": {
                                 "title": "Transfer Cargo Request",
+                                "type": "object",
                                 "properties": {
                                     "tradeSymbol": {
-                                        "type": "string"
+                                        "$ref": "#/components/schemas/TradeSymbol"
                                     },
                                     "units": {
-                                        "type": "integer"
+                                        "type": "integer",
+                                        "description": "Amount of units to transfer."
                                     },
                                     "shipSymbol": {
-                                        "type": "string"
+                                        "type": "string",
+                                        "description": "The symbol of the ship to transfer to."
                                     }
                                 },
                                 "required": [
                                     "tradeSymbol",
                                     "units",
                                     "shipSymbol"
-                                ],
-                                "type": "object"
+                                ]
                             }
                         }
                     }
@@ -4731,28 +4930,27 @@
                             "application/json": {
                                 "schema": {
                                     "title": "Transfer Cargo 200 Response",
-                                    "description": "",
+                                    "type": "object",
                                     "properties": {
                                         "data": {
+                                            "type": "object",
+                                            "required": [
+                                                "cargo"
+                                            ],
                                             "properties": {
                                                 "cargo": {
                                                     "$ref": "#/components/schemas/ShipCargo"
                                                 }
-                                            },
-                                            "required": [
-                                                "cargo"
-                                            ],
-                                            "type": "object"
+                                            }
                                         }
                                     },
                                     "required": [
                                         "data"
-                                    ],
-                                    "type": "object"
+                                    ]
                                 }
                             }
                         },
-                        "description": "Created"
+                        "description": "Transfer successful."
                     }
                 },
                 "security": [
@@ -4762,7 +4960,7 @@
                 ],
                 "summary": "Transfer Cargo",
                 "tags": [
-                    "fleet"
+                    "Fleet"
                 ]
             }
         },
@@ -4774,19 +4972,13 @@
                     "required": true,
                     "schema": {
                         "type": "string"
-                    }
+                    },
+                    "description": "The ship's symbol."
                 }
             ],
             "post": {
-                "description": "",
+                "description": "Negotiate a new contract with the HQ.\n\nIn order to negotiate a new contract, an agent must not have ongoing or offered contracts over the allowed maximum amount. Currently the maximum contracts an agent can have at a time is 1.\n\nOnce a contract is negotiated, it is added to the list of contracts offered to the agent, which the agent can then accept. \n\nThe ship must be present at a faction's HQ waypoint to negotiate a contract with that faction.",
                 "operationId": "negotiateContract",
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {}
-                        }
-                    }
-                },
                 "responses": {
                     "201": {
                         "content": {
@@ -4814,7 +5006,7 @@
                                 }
                             }
                         },
-                        "description": "Created"
+                        "description": "Successfully negotiated a new contract."
                     }
                 },
                 "security": [
@@ -4824,7 +5016,237 @@
                 ],
                 "summary": "Negotiate Contract",
                 "tags": [
-                    "fleet"
+                    "Fleet"
+                ]
+            }
+        },
+        "/my/ships/{shipSymbol}/mounts": {
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "shipSymbol",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "The ship's symbol."
+                }
+            ],
+            "get": {
+                "description": "Get the mounts installed on a ship.",
+                "operationId": "get-mounts",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "title": "Get Mounts 200 Response",
+                                    "description": "",
+                                    "properties": {
+                                        "data": {
+                                            "items": {
+                                                "$ref": "#/components/schemas/ShipMount"
+                                            },
+                                            "type": "array"
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "Got installed mounts."
+                    }
+                },
+                "security": [
+                    {
+                        "AgentToken": []
+                    }
+                ],
+                "summary": "Get Mounts",
+                "tags": [
+                    "Fleet"
+                ]
+            }
+        },
+        "/my/ships/{shipSymbol}/mounts/install": {
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "shipSymbol",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "The ship's symbol."
+                }
+            ],
+            "post": {
+                "description": "Install a mount on a ship.\n\nIn order to install a mount, the ship must be docked and located in a waypoint that has a `Shipyard` trait. The ship also must have the mount to install in its cargo hold.\n\nAn installation fee will be deduced by the Shipyard for installing the mount on the ship. ",
+                "operationId": "install-mount",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "title": "Install Mount Request",
+                                "properties": {
+                                    "symbol": {
+                                        "type": "string"
+                                    }
+                                },
+                                "required": [
+                                    "symbol"
+                                ],
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "title": "Install Mount 201 Response",
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "required": [
+                                                "agent",
+                                                "mounts",
+                                                "cargo",
+                                                "transaction"
+                                            ],
+                                            "properties": {
+                                                "agent": {
+                                                    "$ref": "#/components/schemas/Agent"
+                                                },
+                                                "mounts": {
+                                                    "type": "array",
+                                                    "description": "List of installed mounts after the installation of the new mount.",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/ShipMount"
+                                                    }
+                                                },
+                                                "cargo": {
+                                                    "$ref": "#/components/schemas/ShipCargo"
+                                                },
+                                                "transaction": {
+                                                    "$ref": "#/components/schemas/ShipyardTransaction"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        },
+                        "description": "Successfully installed the mount."
+                    }
+                },
+                "security": [
+                    {
+                        "AgentToken": []
+                    }
+                ],
+                "summary": "Install Mount",
+                "tags": [
+                    "Fleet"
+                ]
+            }
+        },
+        "/my/ships/{shipSymbol}/mounts/remove": {
+            "parameters": [
+                {
+                    "in": "path",
+                    "name": "shipSymbol",
+                    "required": true,
+                    "schema": {
+                        "type": "string"
+                    },
+                    "description": "The ship's symbol."
+                }
+            ],
+            "post": {
+                "description": "Remove a mount from a ship.\n\nThe ship must be docked in a waypoint that has the `Shipyard` trait, and must have the desired mount that it wish to remove installed.\n\nA removal fee will be deduced from the agent by the Shipyard.",
+                "operationId": "remove-mount",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "title": "Remove Mount Request",
+                                "type": "object",
+                                "properties": {
+                                    "symbol": {
+                                        "type": "string",
+                                        "description": "The symbol of the mount to remove."
+                                    }
+                                },
+                                "required": [
+                                    "symbol"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "title": "Remove Mount 201 Response",
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "required": [
+                                                "agent",
+                                                "mounts",
+                                                "cargo",
+                                                "transaction"
+                                            ],
+                                            "properties": {
+                                                "agent": {
+                                                    "$ref": "#/components/schemas/Agent"
+                                                },
+                                                "mounts": {
+                                                    "type": "array",
+                                                    "description": "List of installed mounts after the removal of the selected mount.",
+                                                    "items": {
+                                                        "$ref": "#/components/schemas/ShipMount"
+                                                    }
+                                                },
+                                                "cargo": {
+                                                    "$ref": "#/components/schemas/ShipCargo"
+                                                },
+                                                "transaction": {
+                                                    "$ref": "#/components/schemas/ShipyardTransaction"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "data"
+                                    ]
+                                }
+                            }
+                        },
+                        "description": "Successfully removed the mount."
+                    }
+                },
+                "security": [
+                    {
+                        "AgentToken": []
+                    }
+                ],
+                "summary": "Remove Mount",
+                "tags": [
+                    "Fleet"
                 ]
             }
         }

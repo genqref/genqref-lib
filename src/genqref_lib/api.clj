@@ -3,18 +3,18 @@
    - https://docs.spacetraders.io/
    - https://spacetraders.stoplight.io/docs/spacetraders/
    - https://twitter.com/SpaceTradersAPI"
-  (:require [martian.core :as martian]
-            [martian.clj-http :as martian-http]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
             [clojure.set :as set]
+            [martian.core :as martian]
+            [martian.httpkit :as martian-http]
             [duratom.core :refer [duratom]]
             [cheshire.core :as json]
             [taoensso.timbre :as timbre :refer [trace debug info warn error]]
-            [clj-http.client :as http]
+            [org.httpkit.client :as http]
             [genqref-lib.time :as t]
             [genqref-lib.util :as util :refer [sym]]
-            [genqref-lib.scheduler :refer [schedule!]])
-  (:use [slingshot.slingshot :only [try+ throw+]])
+            [genqref-lib.scheduler :refer [schedule!]]
+            [slingshot.slingshot :refer [try+ throw+]])
   (:gen-class))
 
 ;;; public api
@@ -32,6 +32,7 @@
   []
   (-> "https://api.spacetraders.io/v2"
       http/get
+      deref
       :body
       (json/parse-string true)))
 
@@ -55,7 +56,7 @@
   (if (token)
     (warn "There is already a token for the current run. Abort.")
     (when-let [{:keys [token agent contract faction ship] :as response}
-               (:data (:body (martian/response-for public-api :register options)))]
+               (:data (:body @(martian/response-for public-api :register options)))]
       (let [{:keys [resetDate]} (status)]
         (swap! tokens assoc resetDate token)
         (reset! state {:resetDate resetDate
@@ -92,7 +93,10 @@
   ([] (init! nil))
   ([reset-fn]
    (alter-var-root #'*api* (constantly (api (token))))
-   (alter-var-root #'*reset-fn* (constantly reset-fn))))
+   (alter-var-root #'*reset-fn* (constantly reset-fn))
+   "done"))
+
+#_(init!)
 
 ;;; error handling
 
@@ -133,7 +137,7 @@
   (let [result
         (try+
          (let [response (apply (partial martian/response-for *api*) args)]
-           (-> response :body :data))
+           (-> response deref :body :data))
          (catch [:status 400] {:keys [request-time headers body] :as e}
            (let [{{:keys [code message]} :error} (json/parse-string body true)]
              (info "Error" code (str "(400)") message)
@@ -296,6 +300,43 @@
                     :systemSymbol
                     (= (sym system))))))
 
+;;; hooks
+
+(defonce ^:private hooks (atom {}))
+
+(defn register-hooks [hook-map]
+  (swap! hooks merge hook-map))
+
+(defn regexify [x]
+  (if (= (type x) java.util.regex.Pattern)
+    x
+    (re-pattern (name x))))
+
+#_(regexify #"hello")
+#_(regexify "hello")
+#_(regexify :hello)
+
+(defn- call-hooks [stage subject & arguments]
+  ;;  stage is one of :updated, :before, :after, :failure
+  (let [stage-subject (str (name stage) "-" (name subject))]
+    (doseq [[pattern hook-fn] @hooks]
+      (when (re-matches (regexify pattern) stage-subject)
+        ;; first try it with all arguments
+        (loop [args (concat [stage subject] arguments)]
+          (when-not
+              (try
+                (apply hook-fn args)
+                :success
+                (catch clojure.lang.ArityException e
+                  (if (nil? args)
+                    (do
+                      (error "Hook" stage-subject "was never called, due to too many arguments.")
+                      :failure)
+                    false)))
+            ;; if it fails try it with one argument less
+            (recur (butlast args))))))))
+
+#_(call-hooks :after :jump "GENQREF-1" :asdf)
 
 ;;; GET (refresh, query the api and populate state)
 
@@ -308,120 +349,161 @@
 
 (defmethod refresh :factions [_ _]
   (trace "Query factions")
-  (:factions (swap! state assoc :factions
-                    (util/index-by (comp keyword :symbol) (q :get-factions)))))
+  (let [factions (q :get-factions)]
+    (swap! state update :factions
+           util/deep-merge (util/index-by (comp keyword :symbol) factions))
+    (call-hooks :updated :factions factions)
+    factions))
 
 (defmethod refresh :faction [_ faction]
   (trace "Query faction" (sym faction))
-  (let [response (q :get-faction {:factionSymbol (sym faction)})]
-    (swap! state assoc-in [:factions (keyword (sym faction))] response)
-    response))
+  (let [faction (q :get-faction {:factionSymbol (sym faction)})]
+    (swap! state update-in [:factions (keyword (sym faction))]
+           util/deep-merge faction)
+    (call-hooks :updated :faction faction)
+    faction))
 
 ;;;; fleet
 
 (defmethod refresh :ships [_ _]
   (trace "Query ships")
-  (:ships (swap! state assoc :ships
-                 (util/index-by (comp keyword :symbol) (q :get-my-ships)))))
+  (let [ships (q :get-my-ships)]
+    (swap! state update :ships
+           util/deep-merge (util/index-by (comp keyword :symbol) ships))
+    (call-hooks :updated :ships ships)
+    ships))
 
 (defmethod refresh :ship [_ ship]
   (trace "Query ship" (sym ship))
-  (get-in (swap! state assoc-in [:ships (keyword (sym ship))]
-                 (q :get-my-ship {:shipSymbol (sym ship)}))
-          [:ships (keyword (sym ship))]))
+  (let [ship (q :get-my-ship {:shipSymbol (sym ship)})]
+    (swap! state update-in [:ships (keyword (sym ship))]
+           util/deep-merge ship)
+    (call-hooks :updated :ship ship)
+    ship))
+
+#_(def ship (refresh! :ship "GENQREF-1"))
 
 (defmethod refresh :cargo [_ ship]
   (trace "Query cargo for ship" (sym ship))
-  (let [response (q :get-ship-cargo {:shipSymbol (sym ship)})]
-    (swap! state assoc-in [:ships (keyword (sym ship)) :cargo] response)
-    response))
+  (let [cargo (q :get-ship-cargo {:shipSymbol (sym ship)})]
+    (swap! state update-in [:ships (keyword (sym ship)) :cargo]
+           util/deep-merge cargo)
+    (call-hooks :updated :cargo ship cargo)
+    cargo))
 
 (defmethod refresh :cooldown [_ ship]
   (trace "Query cooldown for ship" (sym ship))
-  (let [response (q :get-ship-cooldown {:shipSymbol (sym ship)})]
-    (swap! state assoc-in [:ships (keyword (sym ship)) :cooldown] response)
-    response))
+  (let [cooldown (q :get-ship-cooldown {:shipSymbol (sym ship)})]
+    (swap! state update-in [:ships (keyword (sym ship)) :cooldown]
+           util/deep-merge cooldown)
+    (call-hooks :updated :cooldown ship cooldown)
+    cooldown))
 
 (defmethod refresh :nav [_ ship]
   (trace "Query nav for ship" (sym ship))
-  (let [response (q :get-ship-nav {:shipSymbol (sym ship)})]
-    (swap! state assoc-in [:ships (keyword (sym ship)) :nav] response)
-    response))
+  (let [nav (q :get-ship-nav {:shipSymbol (sym ship)})]
+    (swap! state update-in [:ships (keyword (sym ship)) :nav]
+           util/deep-merge nav)
+    (call-hooks :updated :nav ship nav)
+    nav))
 
 ;;;; contracts
 
 (defmethod refresh :contracts [_ _]
   (trace "Query contracts")
-  (:contracts (swap! state assoc :contracts (util/index-by (comp keyword :id)
-                                                           (q :get-contracts)))))
+  (let [contracts (q :get-contracts)]
+    (swap! state update :contracts
+           util/deep-merge (util/index-by (comp keyword :id) contracts))
+    (call-hooks :updated :contracts contracts)
+    contracts))
 
 (defmethod refresh :contract [_ {:keys [id] :as contract}]
   (trace "Query contract" id)
-  (let [response (q :get-contract {:contractId id})]
-    (swap! state assoc-in [:contracts (keyword id)] response)
-    response))
+  (let [contract (q :get-contract {:contractId id})]
+    (swap! state update-in [:contracts (keyword id)]
+           util/deep-merge contract)
+    (call-hooks :updated :contract contract)
+    contract))
 
 ;;;; systems
 
 (defmethod refresh :systems [_ _]
   (trace "Query systems")
-  (:systems (swap! state update :systems merge
-                   (util/index-by (comp keyword :symbol) (q :get-systems)))))
+  (let [systems (q :get-systems)]
+    (swap! state update :systems
+           util/deep-merge (util/index-by (comp keyword :symbol) systems))
+    (call-hooks :updated :systems systems)
+    systems))
 
 (defmethod refresh :system [_ system]
   (trace "Query system" (sym system))
-  (let [response (q :get-system {:systemSymbol (sym system)})]
-    (swap! state assoc-in [:systems (keyword (sym system))] response)
-    response))
+  (let [system (q :get-system {:systemSymbol (sym system)})]
+    (swap! state update-in [:systems (keyword (sym system))]
+           util/deep-merge system)
+    (call-hooks :updated :system system)
+    system))
 
 (defmethod refresh :waypoints [_ system]
   (trace "Query waypoints for system" (sym system))
-  (let [response (q :get-system-waypoints {:systemSymbol (sym system)})]
-    (swap! state update :waypoints merge (util/index-by (comp keyword :symbol) response))
-    response))
+  (let [waypoints (q :get-system-waypoints {:systemSymbol (sym system)})]
+    (swap! state update :waypoints
+           util/deep-merge (util/index-by (comp keyword :symbol) waypoints))
+    (call-hooks :updated :waypoints system waypoints)
+    waypoints))
 
 (defmethod refresh :waypoint [_ waypoint]
   (trace "Query waypoint" (sym waypoint))
-  (let [response (q :get-waypoint {:systemSymbol (util/parse-system (sym waypoint))
+  (let [waypoint (q :get-waypoint {:systemSymbol (util/parse-system (sym waypoint))
                                    :waypointSymbol (sym waypoint)})]
-    (swap! state update-in [:waypoints (keyword (sym waypoint))] merge response)
-    response))
+    (swap! state update-in [:waypoints (keyword (sym waypoint))]
+           util/deep-merge waypoint)
+    (call-hooks :updated :waypoint waypoint)
+    waypoint))
 
 (defmethod refresh :market [_ waypoint]
   (trace "Query market at waypoint" (sym waypoint))
   (let [symbol (sym waypoint)
-        response (q :get-market {:systemSymbol (util/parse-system symbol)
+        market (q :get-market {:systemSymbol (util/parse-system symbol)
                                  :waypointSymbol symbol})]
-    (swap! state assoc-in [:markets (keyword symbol)] response)
-    response))
+    (swap! state update-in [:markets (keyword symbol)]
+           util/deep-merge market)
+    (call-hooks :updated :market waypoint market)
+    market))
 
 (defmethod refresh :shipyard [_ waypoint]
   (trace "Query shipyard at waypoint" (sym waypoint))
   (let [symbol (sym waypoint)
-        response (q :get-shipyard {:systemSymbol (util/parse-system symbol)
+        shipyard (q :get-shipyard {:systemSymbol (util/parse-system symbol)
                                    :waypointSymbol symbol})]
-    (swap! state assoc-in [:shipyards (keyword symbol)] response)
-    response))
+    (swap! state update-in [:shipyards (keyword symbol)]
+           util/deep-merge shipyard)
+    (call-hooks :updated :shipyard waypoint shipyard)
+    shipyard))
 
 (defmethod refresh :jumpgate [_ waypoint]
   (trace "Query jump gate at waypoint" (sym waypoint))
-  (let [{:keys [connectedSystems] :as response}
+  (let [{:keys [connectedSystems] :as jumpgate}
         (q :get-jump-gate {:systemSymbol (util/parse-system (sym waypoint))
                            :waypointSymbol (sym waypoint)})]
-    (swap! state update-in [:jumpgates (keyword (sym waypoint))] merge response)
+    (swap! state update-in [:jumpgates (keyword (sym waypoint))] util/deep-merge jumpgate)
     ;; also merge the minimal info we get about connected systems into
     ;; systems
     (->> connectedSystems
          (map #(dissoc % :distance))
          (util/index-by (comp keyword :symbol))
          (swap! state update :systems util/deep-merge))
-    response))
+    (call-hooks :updated :jumpgate waypoint jumpgate)
+    jumpgate))
 
 ;;;; agents
 
 (defmethod refresh :agent [_ _]
-  (:agent (swap! state assoc :agent
-                 (q :get-my-agent))))
+  (trace "Query agent")
+  (let [agent (q :get-my-agent)]
+    (swap! state update :agent
+           util/deep-merge (q :get-my-agent))
+    (call-hooks :updated :agent agent)
+    agent))
 
 ;;; GET api
 
@@ -434,12 +516,11 @@
 
 ;;; POST/PATCH (actions)
 
-;; TODO: use `(when-let [response (q ...` consistently
-
 ;;;; fleet
 
 (defn purchase-ship! [shipyard ship-type]
   (trace "Purchase ship" ship-type "from" (sym shipyard))
+  (call-hooks :before :purchase-ship shipyard ship-type)
   (when-let [{:keys [agent ship transaction] :as response}
              (q :purchase-ship {:waypointSymbol (sym shipyard)
                                 :shipType ship-type})]
@@ -448,13 +529,16 @@
                       (update :ships assoc-in [:ships (keyword (sym ship))] ship)
                       ;; TODO: maybe index transaction too
                       (update :transactions conj transaction)))
+    (call-hooks :after :purchase-ship shipyard agent ship transaction)
     response))
 
 (defn orbit! [ship]
   (let [symbol (sym ship)]
     (trace "Moving ship" symbol "to orbit")
+    (call-hooks :before :orbit ship)
     (when-let [response (q :orbit-ship {:shipSymbol symbol})]
       ;; TODO: update state
+      (call-hooks :after :orbit ship)
       response)))
 
 #_(orbit! ship)
@@ -463,16 +547,20 @@
 
 (defn chart! [ship]
   (trace "Charting waypoint from ship" (sym ship))
+  (call-hooks :before :chart ship)
   (when-let [{:keys [chart waypoint] :as response}
              (q :create-chart {:shipSymbol (sym ship)})]
     ;; TODO: update state
+    (call-hooks :after :chart ship chart waypoint)
     response))
 
 (defn dock! [ship]
   (trace "Docking ship" (sym ship))
+  (call-hooks :before :dock ship)
   (when-let [response
              (q :dock-ship {:shipSymbol (sym ship)})]
     ;; TODO: update state
+    (call-hooks :after :dock ship)
     response))
 
 #_(dock! ship)
@@ -482,6 +570,7 @@
    (survey! ship {:on-cooldown #(debug "Ship" (sym ship) "completed cooldown after survey")}))
   ([ship options]
    (trace "Ship" (sym ship) "surveys")
+   (call-hooks :before :survey ship options)
    (when-let [{:keys [surveys cooldown] :as response}
               (q :create-survey {:shipSymbol (sym ship)})]
      (swap! state assoc-in [:ships (keyword (sym ship)) :cooldown] cooldown)
@@ -489,6 +578,7 @@
        (swap! state update-in [:surveys (keyword symbol)] conj survey))
      (when-let [f (:on-cooldown options)]
        (schedule! (:expiration cooldown) f))
+     (call-hooks :after :survey ship options surveys cooldown)
      response)))
 
 #_(survey! ship)
@@ -499,6 +589,7 @@
    (extract! ship {:on-cooldown #(debug "Ship" (sym ship) "completed cooldown after extract")}))
   ([ship options]
    (trace "Ship" (sym ship) "extracts resources")
+   (call-hooks :before :extract ship options)
    (when-let [{:keys [cooldown] :as response}
               (q :extract-resources (-> (into {} (filter last options))
                                         (dissoc :on-cooldown)
@@ -507,17 +598,20 @@
      (swap! state assoc-in [:ships (keyword (sym ship)) :cooldown] cooldown)
      (when-let [f (:on-cooldown options)]
        (schedule! (:expiration cooldown) f))
+     (call-hooks :after :extract ship options cooldown)
      response)))
 
 #_(extract! "GENQREF-5")
 
 (defn jettison! [ship cargo units]
   (trace "Ship" (sym ship) "jettisons" units "units of" (sym cargo))
+  (call-hooks :before :jettison ship cargo units)
   (when-let [response
              (q :jettison {:shipSymbol (sym ship)
                            :symbol (sym cargo)
                            :units units})]
     ;; TODO: update state
+    (call-hooks :after :jettison ship cargo units)
     response))
 
 #_(jettison! "GENQREF-5" "ICE_WATER" 4)
@@ -527,6 +621,7 @@
                         {:on-cooldown #(debug "Ship" (sym ship) "completed cooldown after jump")}))
   ([ship system options]
    (trace "Ship" (sym ship) "jumping to system" (sym system))
+   (call-hooks :before :jump ship system)
    (when-let [{:keys [cooldown nav] :as response}
               (q :jump-ship {:shipSymbol (sym ship)
                              :systemSymbol (sym system)})]
@@ -534,6 +629,7 @@
      (swap! state assoc-in [:ships (keyword (sym ship)) :nav] nav)
      (when-let [f (:on-cooldown options)]
        (schedule! (:expiration cooldown) f))
+     (call-hooks :after :jump ship system nav cooldown)
      response)))
 
 #_(jump! ship "X1-PY76")
@@ -544,6 +640,7 @@
   ([ship destination options]
    (let [waypoint-symbol (sym destination)]
      (trace "Ship" (sym ship) "navigates to" waypoint-symbol)
+     (call-hooks :before :navigate ship destination options)
      (when-let [{{{:keys [arrival]} :route} :nav :as response}
                 (q :navigate-ship {:shipSymbol (sym ship)
                                    :waypointSymbol waypoint-symbol})]
@@ -551,6 +648,8 @@
        ;; (info "Ship" (sym ship) "in transit to" waypoint-symbol (str "(" (:type destination) ")") "arrival at" arrival)
        (when-let [f (:on-arrival options)]
          (schedule! arrival f))
+       ;; TODO: add more details
+       (call-hooks :after :navigate ship destination options)
        response))))
 
 #_(navigate! ship asteroid-field)
@@ -558,33 +657,41 @@
 (defn flight-mode! [ship mode]
   (let [mode (-> mode name str/upper-case)]
     (trace "Ship" (sym ship) "sets flight mode to" mode)
+    (call-hooks :before :flight-mode ship mode)
     (when-let [response
                (q :patch-ship-nav {:shipSymbol (sym ship)
                                    :flightMode mode})]
       ;; TODO: update state
+      (call-hooks :after :flight-mode ship mode)
       response)))
 
 #_(flight-mode! ship "BURN")
 
 (defn warp! [ship destination]
   (trace "Ship" (sym ship) "warping to" (sym destination))
+  (call-hooks :before :warp ship destination)
   (when-let [response
+             ;; TODO: implement
              (q :warp-ship {})]
     ;; TODO: update state
+    (call-hooks :after :warp ship destination response)
     response))
 
 (defn sell-cargo! [ship trade-symbol units]
   (trace "Ship" (sym ship) "selling" units "units of" trade-symbol)
+  (call-hooks :before :sell-cargo ship trade-symbol units)
   (when-let [response
              (q :sell-cargo {:shipSymbol (sym ship)
                              :symbol trade-symbol
                              :units units})]
     ;; TODO: update state
+    (call-hooks :after :sell-cargo ship trade-symbol units response)
     response))
 
 ;; TODO: add option :on-cooldown
 (defn scan-systems! [ship]
   (trace "Ship" (sym ship) "scans systems")
+  (call-hooks :before :scan-systems ship)
   (when-let [{:keys [cooldown systems] :as response}
              (q :create-ship-system-scan {:shipSymbol (sym ship)})]
     (swap! state assoc-in [:ships (keyword (sym ship)) :cooldown] cooldown)
@@ -593,6 +700,7 @@
          (util/index-by (comp keyword :symbol))
          (swap! state update :systems util/deep-merge))
     ;; TODO: maybe use distance, but maybe not because it can easily be calculated
+    (call-hooks :after :scan-systems ship systems cooldown)
     response))
 
 #_(scan-systems! ship)
@@ -600,12 +708,14 @@
 ;; TODO: add option :on-cooldown
 (defn scan-waypoints! [ship]
   (trace "Ship" (sym ship) "scans waypoints")
+  (call-hooks :before :scan-waypoints ship)
   (when-let [{:keys [cooldown waypoints] :as response}
              (q :create-ship-waypoint-scan {:shipSymbol (sym ship)})]
     (swap! state assoc-in [:ships (keyword (sym ship)) :cooldown] cooldown)
     (->> waypoints
          (util/index-by (comp keyword :symbol))
          (swap! state update :waypoints util/deep-merge))
+    (call-hooks :after :scan-waypoints ship waypoints cooldown)
     response))
 
 #_(scan-waypoints! ship)
@@ -613,30 +723,36 @@
 ;; TODO: add option :on-cooldown
 (defn scan-ships! [ship]
   (trace "Ship" (sym ship) "scans ships")
+  (call-hooks :before :scan-ships ship)
   (when-let [response
              (q :create-ship-ship-scan {:shipSymbol (sym ship)})]
     ;; TODO: update state
+    (call-hooks :after :scan-ships ship response)
     response))
 
 #_(scan-ships! ship)
 
 (defn refuel! [ship]
-  (info "Ship" (sym ship) "refuels")
+  (trace "Ship" (sym ship) "refuels")
+  (call-hooks :before :refuel ship)
   (when-let [response
              (q :refuel-ship {:shipSymbol (sym ship)})]
     ;; TODO: update state
+    (call-hooks :after :refuel ship response)
     response))
 
 #_(refuel! ship)
 
 (defn purchase-cargo! [ship trade units]
   (trace "Ship" (sym ship) "purchases" units "units of" trade)
+  (call-hooks :before :purchase-cargo ship trade units)
   (when-let [response
              (q :purchase-cargo {:shipSymbol (sym ship)
                                  :symbol trade
                                  :units units})]
     ;; TODO: update state
     ;; (info "Ship" (sym ship) "purchased" units "units of" trade "for" (-> response :transaction :totalPrice))
+    (call-hooks :after :purchase-cargo ship trade units response)
     response))
 
 #_(purchase-cargo! ship "ANTIMATTER" 1)
@@ -645,6 +761,7 @@
 ;; parameter need to be called `shipSymbol2`
 (defn transfer! [from to trade units]
   (trace "Ship" (sym from) "transfers" units "of" trade "to ship" (sym to))
+  (call-hooks :before :transfer from to trade units)
   (when-let [{:keys [cargo] :as response}
              (q :transfer-cargo {:shipSymbol2 (sym from)
                                  :shipSymbol (sym to)
@@ -652,14 +769,17 @@
                                  :units units})]
     ;; TODO: update state
     ;; (info "Ship" (sym from) "transfered" units "of" trade "to ship" (sym to))
+    (call-hooks :after :transfer from to trade units cargo response)
     response))
 
 ;; TODO: does this work?
 (defn negotiate-contract! [ship]
   (trace "Ship" (sym ship) "negotiates a contract")
+  (call-hooks :before :negotiate-contract ship)
   (when-let [{:keys [contract] :as response}
              (q :negotiate-contract {:shipSymbol (sym ship)})]
     ;; TODO: update state
+    (call-hooks :before :negotiate-contract ship contract response)
     response))
 
 ;;;; contracts
@@ -667,27 +787,33 @@
 (defn deliver-contract! [ship contract trade units]
   (let [id (or (:id contract) contract)]
     (trace "Ship" (sym ship) "delivers" units "units of" trade "for contract" id)
+    (call-hooks :before :deliver-contract ship contract trade units)
     (when-let [response (q :deliver-contract {:contractId id
                                               :shipSymbol (sym ship)
                                               :tradeSymbol trade
                                               :units units})]
       ;; TODO: update state
+      (call-hooks :after :deliver-contract ship contract trade units response)
       response)))
 
 (defn accept-contract! [contract]
   (let [id (or (:id contract) contract)]
     (trace "Accepting contract" id)
+    (call-hooks :before :accept-contract contract)
     (when-let [{:keys [contract agent] :as response}
                (q :accept-contract {:contractId id})]
       ;; TODO: update state
+      (call-hooks :after :accept-contract contract agent)
       response)))
 
 (defn fulfill-contract! [contract]
   (let [id (or (:id contract) contract)]
     (trace "Fullfilling contract" id)
+    (call-hooks :before :fulfill-contract contract)
     (when-let [{:keys [contract agent] :as response}
                (q :fulfill-contract {:contractId id})]
       ;; TODO: update state
+      (call-hooks :after :fulfill-contract contract agent)
       response)))
 
 #_(fulfill-contract! (-> @state :contracts vals first))
