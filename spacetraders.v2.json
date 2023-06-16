@@ -4885,7 +4885,7 @@
             "parameters": [
                 {
                     "in": "path",
-                    "name": "shipSymbol",
+                    "name": "shipSymbol2",
                     "required": true,
                     "schema": {
                         "type": "string"

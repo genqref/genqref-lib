@@ -109,7 +109,7 @@
 (declare refuel!)
 (declare state)
 
-;; TODO: move to util
+;; TODO: move to util, maybe rename to waypoint
 (defn parse-waypoint [signature]
   ;; "X1-VS75-67965Z-97E75E"
   (->> (str/split signature #"-")
@@ -131,6 +131,7 @@
            (partial remove #(-> % :signature (= signature))))
     (info "Removed survey" signature "with depleted deposits")))
 
+;; https://docs.spacetraders.io/api-guide/response-errors
 ;; TODO: handle network issues with retrying
 ;; TODO: catch registration required after reset
 (defn- q* [args]
@@ -260,6 +261,12 @@
                     :rw {:read (comp #(json/parse-string % true) slurp)
                          :write #(spit %1 (json/generate-string %2))}))
 
+;;; util
+
+(defn xy [{:keys [x y]}]
+  (when (and x y)
+    (str "[" x "," y "]")))
+
 ;;; operations on state
 
 (defn ship-by-name [name]
@@ -307,6 +314,9 @@
 (defn register-hooks [hook-map]
   (swap! hooks merge hook-map))
 
+(defn reset-hooks! []
+  (reset! hooks {}))
+
 (defn regexify [x]
   (if (= (type x) java.util.regex.Pattern)
     x
@@ -338,12 +348,12 @@
 
 #_(call-hooks :after :jump "GENQREF-1" :asdf)
 
+
 ;;; GET (refresh, query the api and populate state)
 
 (defmulti refresh (fn [entity _] entity))
 
-;; TODO: in all refresh methods use util/deep-merge instead of assoc,
-;; assoc-in or merge, to be less destructive of existing information
+;; TODO: pass map as 3rd param to call-hooks in refresh fns
 
 ;;;; factions
 
@@ -464,7 +474,7 @@
   (trace "Query market at waypoint" (sym waypoint))
   (let [symbol (sym waypoint)
         market (q :get-market {:systemSymbol (util/parse-system symbol)
-                                 :waypointSymbol symbol})]
+                               :waypointSymbol symbol})]
     (swap! state update-in [:markets (keyword symbol)]
            util/deep-merge market)
     (call-hooks :updated :market waypoint market)
@@ -519,301 +529,811 @@
 ;;;; fleet
 
 (defn purchase-ship! [shipyard ship-type]
-  (trace "Purchase ship" ship-type "from" (sym shipyard))
-  (call-hooks :before :purchase-ship shipyard ship-type)
-  (when-let [{:keys [agent ship transaction] :as response}
-             (q :purchase-ship {:waypointSymbol (sym shipyard)
-                                :shipType ship-type})]
-    (swap! state #(-> %
-                      (update :agent util/deep-merge agent)
-                      (update :ships assoc-in [:ships (keyword (sym ship))] ship)
-                      ;; TODO: maybe index transaction too
-                      (update :transactions conj transaction)))
-    (call-hooks :after :purchase-ship shipyard agent ship transaction)
-    response))
+  (trace "About to purchase" ship-type "at" (sym shipyard))
+  (call-hooks :before :purchase-ship {:shipyard shipyard
+                                      :ship-type ship-type})
+  (if-let [{:keys [agent ship transaction] :as response}
+           (q :purchase-ship {:waypointSymbol (sym shipyard)
+                              :shipType ship-type})]
+    (do
+      ;; diligence
+      (when-let [unused (not-empty (dissoc response :agent :ship :transaction))]
+        (warn "UNUSED BY purchase-ship!" (prn-str unused)))
+      ;; tracing
+      (debug "Purchased" ship-type "at" (sym shipyard))
+      ;; update state
+      (swap! state #(-> %
+                        (update :agent util/deep-merge agent)
+                        ;; this is a new ship, so assoc-in is ok in this case
+                        (update :ships assoc-in [:ships (keyword (sym ship))] ship)
+                        ;; TODO: index transaction too, for mergability
+                        (update :transactions conj transaction)))
+      ;; callbacks
+      (call-hooks :after :purchase-ship {:shipyard shipyard
+                                         :agent agent
+                                         :ship ship
+                                         :transaction transaction})
+      ;; return
+      response)
+    (do
+      (debug "Failed to purchase" ship-type "at" (sym shipyard))
+      (call-hooks :failed :purchase-ship {:shipyard shipyard
+                                          :ship-type ship-type}))))
 
 (defn orbit! [ship]
-  (let [symbol (sym ship)]
-    (trace "Moving ship" symbol "to orbit")
-    (call-hooks :before :orbit ship)
-    (when-let [response (q :orbit-ship {:shipSymbol symbol})]
-      ;; TODO: update state
-      (call-hooks :after :orbit ship)
-      response)))
+  (trace "Ship" (sym ship) "is about to move to orbit")
+  (call-hooks :before :orbit {:ship ship})
+  (if-let [{:keys [nav] :as response}
+           (q :orbit-ship {:shipSymbol (sym ship)})]
+    (do
+      ;; diligence
+      (when-let [x (not-empty (dissoc response :nav))]
+        (warn "UNUSED BY orbit!" (prn-str x)))
+      ;; tracing
+      (debug "Ship" (sym ship) "moved to orbit")
+      ;; update state
+      (swap! state update-in [:ships (keyword (sym ship)) :nav]
+             util/deep-merge nav)
+      ;; callbacks
+      (call-hooks :after :orbit {:ship ship
+                                 :nav nav})
+      ;;return
+      response)
+    (do
+      (debug "Ship" (sym ship) "failed to move to orbit")
+      (call-hooks :failed :orbit {:ship ship}))))
 
 #_(orbit! ship)
 
-;; TODO: implement refine
+(defn- list-goods [goods]
+  (->> goods
+       (map (fn [{:keys [units tradeSymbol]}] (str units " " tradeSymbol)))
+       (str/join ", ")))
+
+(defn refine!
+  ([ship product] (refine! ship product {}))
+  ([ship product {:keys [on-cooldown] :as options}]
+   (trace "Ship" (sym ship) "is about to refine" product)
+   (call-hooks :before :refine {:ship ship
+                                :product product})
+   (if-let [{:keys [cargo cooldown produced consumed] :as response}
+            (q :ship-refine {:shipSymbol (sym ship)
+                             :produce product})]
+     (do
+       ;; diligence
+       (when-let [x (not-empty (dissoc response :cargo :cooldown :produced :consumed))]
+         (warn "UNUSED BY refine!" (prn-str x)))
+       ;; tracing
+       (debug "Ship" (sym ship) "refined" (list-goods consumed) "into" (list-goods produced))
+       ;; update state
+       (swap! state update-in [:ships (keyword (sym ship))]
+              util/deep-merge {:cargo cargo
+                               :cooldown cooldown})
+       ;; TODO: maybe persist produced and consumed
+       ;; scheduling
+       (if-let [expiration (:expiration cooldown)]
+         (schedule! expiration
+                    #(do
+                       (debug "Ship" (sym ship) "completed cooldown after refining" product)
+                       (call-hooks :completed :refine {:ship ship
+                                                       :product product
+                                                       :cargo cargo
+                                                       :cooldown cooldown
+                                                       :produced produced
+                                                       :consumed consumed})
+                       (when on-cooldown (on-cooldown))))
+         (error "Schedule failed no expiration in" (prn-str response)))
+       ;; callbacks
+       (call-hooks :after :refine {:ship ship
+                                   :product product
+                                   :cargo cargo
+                                   :cooldown cooldown
+                                   :produced produced
+                                   :consumed consumed})
+       ;;return
+       response)
+     (do
+       (debug "Ship" (sym ship) "failed to refine" product)
+       (call-hooks :failed :refine {:ship ship
+                                    :product product})))))
 
 (defn chart! [ship]
-  (trace "Charting waypoint from ship" (sym ship))
-  (call-hooks :before :chart ship)
-  (when-let [{:keys [chart waypoint] :as response}
-             (q :create-chart {:shipSymbol (sym ship)})]
-    ;; TODO: update state
-    (call-hooks :after :chart ship chart waypoint)
-    response))
+  (trace "Ship" (sym ship) "is about to chart waypoint")
+  (call-hooks :before :chart {:ship ship})
+  (if-let [{:keys [chart waypoint] :as response}
+           (q :create-chart {:shipSymbol (sym ship)})]
+    (do
+      ;; diligence
+      (when-let [unused (not-empty (dissoc response :x))]
+        (warn "UNUSED BY chart!" (prn-str unused)))
+      ;; tracing
+      (debug "Ship" (sym ship) "charted waypoint")
+      ;; update state
+      ;; TODO
+      ;; callbacks
+      (call-hooks :after :chart {:ship ship
+                                 :chart chart
+                                 :waypoint waypoint})
+      ;; return
+      response)
+    (do
+      (debug "Ship" (sym ship) "failed to chart waypoint")
+      (call-hooks :failed :chart {:ship ship}))))
 
 (defn dock! [ship]
-  (trace "Docking ship" (sym ship))
-  (call-hooks :before :dock ship)
-  (when-let [response
-             (q :dock-ship {:shipSymbol (sym ship)})]
-    ;; TODO: update state
-    (call-hooks :after :dock ship)
-    response))
+  (trace "Ship" (sym ship) "is about to dock")
+  (call-hooks :before :dock {:ship ship})
+  (if-let [{:keys [nav] :as response}
+           (q :dock-ship {:shipSymbol (sym ship)})]
+    (do
+      ;; diligence
+      (when-let [unused (not-empty (dissoc response :nav))]
+        (warn "UNUSED BY dock!" (prn-str unused)))
+      ;; tracing
+      (debug "Ship" (sym ship) "docked at" (:waypointSymbol nav))
+      ;; update state
+      (swap! state update-in [:surveys (keyword (sym ship)) :nav]
+             util/deep-merge nav)
+      ;; callbacks
+      (call-hooks :after :dock {:ship ship
+                                :nav nav})
+      ;; return
+      response)
+    (do
+      (debug "Ship" (sym ship) "failed to dock")
+      (call-hooks :failed :dock {:ship ship}))))
 
 #_(dock! ship)
 
 (defn survey!
-  ([ship]
-   (survey! ship {:on-cooldown #(debug "Ship" (sym ship) "completed cooldown after survey")}))
-  ([ship options]
-   (trace "Ship" (sym ship) "surveys")
-   (call-hooks :before :survey ship options)
-   (when-let [{:keys [surveys cooldown] :as response}
-              (q :create-survey {:shipSymbol (sym ship)})]
-     (swap! state assoc-in [:ships (keyword (sym ship)) :cooldown] cooldown)
-     (doseq [{:keys [symbol] :as survey} surveys]
-       (swap! state update-in [:surveys (keyword symbol)] conj survey))
-     (when-let [f (:on-cooldown options)]
-       (schedule! (:expiration cooldown) f))
-     (call-hooks :after :survey ship options surveys cooldown)
-     response)))
+  ([ship] (survey! ship {}))
+  ([ship {:keys [on-cooldown] :as options}]
+   (trace "Ship" (sym ship) "is about to conduct a survey")
+   (call-hooks :before :survey {:ship ship
+                                :options options})
+   (if-let [{:keys [surveys cooldown] :as response}
+            (q :create-survey {:shipSymbol (sym ship)})]
+     (do
+       ;; diligence
+       (when-let [unused (not-empty (dissoc response :surveys :cooldown))]
+         (warn "UNUSED BY survey!" (prn-str unused)))
+       ;; tracing
+       (debug "Ship" (sym ship) "conducted a survey and found...")
+       (doseq [survey surveys]
+         (debug ">" (:size survey) "deposits of" (str/join ", " (map :symbol (:deposits survey)))))
+       ;; update state
+       (swap! state update-in [:ships (keyword (sym ship)) :cooldown]
+              util/deep-merge cooldown)
+       (doseq [{:keys [symbol] :as survey} surveys]
+         (swap! state update-in [:surveys (keyword symbol)] conj survey))
+       ;; scheduling
+       (if-let [expiration (:expiration cooldown)]
+         (schedule! expiration
+                    #(do
+                       (debug "Ship" (sym ship) "completed cooldown after survey")
+                       (call-hooks :completed :survey {:ship ship
+                                                       :options options
+                                                       :surveys surveys
+                                                       :cooldown cooldown})
+                       (when on-cooldown (on-cooldown))))
+         (error "Schedule failed no expiration in" (prn-str response)))
+       ;; callbacks
+       (call-hooks :after :survey {:ship ship
+                                   :options options
+                                   :surveys surveys
+                                   :cooldown cooldown})
+       ;; return
+       response)
+     (do
+       (debug "Ship" (sym ship) "failed to conduct a survey")
+       (call-hooks :failed :survey {:ship ship
+                                    :options options})))))
 
 #_(survey! ship)
 
 (defn extract!
   "A survey can be passed in options `{:survey ...}`"
-  ([ship]
-   (extract! ship {:on-cooldown #(debug "Ship" (sym ship) "completed cooldown after extract")}))
-  ([ship options]
-   (trace "Ship" (sym ship) "extracts resources")
-   (call-hooks :before :extract ship options)
-   (when-let [{:keys [cooldown] :as response}
-              (q :extract-resources (-> (into {} (filter last options))
-                                        (dissoc :on-cooldown)
-                                        (assoc :shipSymbol (sym ship))))]
-     ;; TODO: handle full response, update state
-     (swap! state assoc-in [:ships (keyword (sym ship)) :cooldown] cooldown)
-     (when-let [f (:on-cooldown options)]
-       (schedule! (:expiration cooldown) f))
-     (call-hooks :after :extract ship options cooldown)
-     response)))
+  ([ship] (extract! ship {}))
+  ([ship {:keys [on-cooldown] :as options}]
+   (trace "Ship" (sym ship) "is about to extract resources")
+   (call-hooks :before :extract {:ship ship
+                                 :options options})
+   (if-let [{:keys [extraction cooldown cargo] :as response}
+            (q :extract-resources (-> (into {} (filter last options))
+                                      (dissoc :on-cooldown)
+                                      (assoc :shipSymbol (sym ship))))]
+     (do
+       ;; diligence
+       (when-let [unused (not-empty (dissoc response :extraction :cooldown :cargo))]
+         (warn "UNUSED BY extract!" (prn-str unused)))
+       ;; tracing
+       (when (:survey options)
+         (debug "Ship" (sym ship) "used survey" (-> options :survey :signature)))
+       (debug "Ship" (sym ship) "extracted" (-> extraction :yield :units) "units of" (-> extraction :yield :symbol))
+       ;; update state
+       (swap! state update-in [:ships (keyword (sym ship))]
+              util/deep-merge {:cargo cargo
+                               :cooldown cooldown})
+       ;; scheduling
+       (if-let [expiration (:expiration cooldown)]
+         (schedule! expiration
+                    #(do
+                       (debug "Ship" (sym ship) "completed cooldown after extract")
+                       (call-hooks :completed :extract {:ship ship
+                                                        :options options
+                                                        :extraction extraction
+                                                        :cooldown cooldown
+                                                        :cargo cargo})
+                       (when on-cooldown (on-cooldown))))
+         (error "Schedule failed. No expiration in" (prn-str response)))
+       ;; callbacks
+       (call-hooks :after :extract {:ship ship
+                                    :options options
+                                    :extraction extraction
+                                    :cooldown cooldown
+                                    :cargo cargo})
+       ;; return
+       response)
+     (do
+       (debug "Ship" (sym ship) "failed to extract resources")
+       (call-hooks :failed :extract {:ship ship
+                                     :options options})))))
 
 #_(extract! "GENQREF-5")
 
-(defn jettison! [ship cargo units]
-  (trace "Ship" (sym ship) "jettisons" units "units of" (sym cargo))
-  (call-hooks :before :jettison ship cargo units)
-  (when-let [response
-             (q :jettison {:shipSymbol (sym ship)
-                           :symbol (sym cargo)
-                           :units units})]
-    ;; TODO: update state
-    (call-hooks :after :jettison ship cargo units)
-    response))
+(defn jettison! [ship item units]
+  (trace "Ship" (sym ship) "is about to jettison" units "units of" (sym item))
+  (call-hooks :before :jettison {:ship ship
+                                 :item item
+                                 :units units})
+  (if-let [{:keys [cargo] :as response}
+           (q :jettison {:shipSymbol (sym ship)
+                         :symbol (sym item)
+                         :units units})]
+    (do
+      ;; diligence
+      (when-let [unused (not-empty (dissoc response :cargo))]
+        (warn "UNUSED BY jettison!" (prn-str unused)))
+      ;; tracing
+      (debug "Ship" (sym ship) "jettisoned" units "units of" (sym item))
+      ;; update state
+      (swap! state update-in [:ships (keyword (sym ship)) :cargo]
+             util/deep-merge cargo)
+      ;; callbacks
+      (call-hooks :after :jettison {:ship ship
+                                    :item item
+                                    :units units
+                                    :cargo cargo})
+      ;; return
+      response)
+    (do
+      (debug "Ship" (sym ship) "failed to jettison" units "units of" (sym item))
+      (call-hooks :failed :jettison {:ship ship
+                                     :item item
+                                     :units units}))))
 
 #_(jettison! "GENQREF-5" "ICE_WATER" 4)
 
 (defn jump!
-  ([ship system] (jump! ship system
-                        {:on-cooldown #(debug "Ship" (sym ship) "completed cooldown after jump")}))
-  ([ship system options]
-   (trace "Ship" (sym ship) "jumping to system" (sym system))
-   (call-hooks :before :jump ship system)
-   (when-let [{:keys [cooldown nav] :as response}
-              (q :jump-ship {:shipSymbol (sym ship)
-                             :systemSymbol (sym system)})]
-     (swap! state assoc-in [:ships (keyword (sym ship)) :cooldown] cooldown)
-     (swap! state assoc-in [:ships (keyword (sym ship)) :nav] nav)
-     (when-let [f (:on-cooldown options)]
-       (schedule! (:expiration cooldown) f))
-     (call-hooks :after :jump ship system nav cooldown)
-     response)))
+  ([ship system] (jump! ship system {}))
+  ([ship system {:keys [on-cooldown] :as options}]
+   (trace "Ship" (sym ship) "is about to jump to system" (sym system))
+   (call-hooks :before :jump {:ship ship
+                              :system system})
+   (if-let [{:keys [cooldown nav] :as response}
+            (q :jump-ship {:shipSymbol (sym ship)
+                           :systemSymbol (sym system)})]
+     (do
+       ;; diligence
+       (when-let [unused (not-empty (dissoc response :cooldown :nav))]
+	 (warn "UNUSED BY jump!" (prn-str unused)))
+       ;; tracing
+       (debug "Ship" (sym ship) "jumped to system" (sym system) (xy system))
+       ;; update state
+       (swap! state update-in [:ships (keyword (sym ship))]
+              util/deep-merge {:cooldown cooldown
+                               :nav nav})
+       ;; scheduling
+       (if-let [expiration (:expiration cooldown)]
+         (schedule! expiration
+                    #(do
+                       (debug "Ship" (sym ship) "completed cooldown after jump")
+                       (call-hooks :completed :jump {:ship ship
+                                                     :system system
+                                                     :nav nav
+                                                     :cooldown cooldown})
+                       (when on-cooldown (on-cooldown))))
+         (error "Schedule failed. No expiration in" (prn-str response)))
+       ;; callbacks
+       (call-hooks :after :jump {:ship ship
+                                 :system system
+                                 :nav nav
+                                 :cooldown cooldown})
+       ;; return
+       response)
+     (do
+       (debug "Ship" (sym ship) "failed to jump to system" (sym system))
+       (call-hooks :failed :jump {:ship ship
+                                  :system system})))))
 
 #_(jump! ship "X1-PY76")
 
 (defn navigate!
-  ([ship destination] (navigate! ship destination
-                                 {:on-arrival #(info "Ship" (sym ship) "has arrived")}))
-  ([ship destination options]
-   (let [waypoint-symbol (sym destination)]
-     (trace "Ship" (sym ship) "navigates to" waypoint-symbol)
-     (call-hooks :before :navigate ship destination options)
-     (when-let [{{{:keys [arrival]} :route} :nav :as response}
-                (q :navigate-ship {:shipSymbol (sym ship)
-                                   :waypointSymbol waypoint-symbol})]
-       ;; TODO: update state
-       ;; (info "Ship" (sym ship) "in transit to" waypoint-symbol (str "(" (:type destination) ")") "arrival at" arrival)
-       (when-let [f (:on-arrival options)]
-         (schedule! arrival f))
-       ;; TODO: add more details
-       (call-hooks :after :navigate ship destination options)
-       response))))
+  ([ship destination] (navigate! ship destination {}))
+  ([ship destination {:keys [on-arrival] :as options}]
+   (trace "Ship" (sym ship) "navigates to" (sym destination))
+   (call-hooks :before :navigate {:ship ship
+                                  :destination destination
+                                  :options options})
+   (if-let [{:keys [nav fuel] :as response}
+            (q :navigate-ship {:shipSymbol (sym ship)
+                               :waypointSymbol (sym destination)})]
+     (do
+       ;; diligence
+       (when-let [unused (not-empty (dissoc response :nav))]
+         (warn "UNUSED BY navigate!" (prn-str unused)))
+       ;; tracing
+       (debug "Ship" (sym ship) "in transit to" (sym destination)
+              (str "(" (:type destination) ")") "arrival at" (-> nav :route :arrival))
+       ;; update state
+       (swap! state update-in [:ships (keyword (sym ship)) :nav]
+              util/deep-merge nav)
+       ;; TODO: use fuel
+       ;; scheduling
+       (if-let [arrival (-> nav :route :arrival)]
+         (schedule! arrival
+                    #(do
+                       (debug "Ship" (sym ship) "has arrived")
+                       (call-hooks :completed :navigate {:ship ship
+                                                         :destination destination
+                                                         :nav nav})
+                       (when on-arrival (on-arrival))))
+         (error "Schedule failed. No arrival in" (prn-str response)))
+       ;; callbacks
+       (call-hooks :after :navigate {:ship ship
+                                     :destination destination
+                                     :nav nav})
+       ;; return
+       response)
+     (do
+       (debug "Ship" (sym ship) "failed to navigate to waypoint" (sym destination))
+       (call-hooks :failed :navigate {:ship ship
+                                      :destination destination})))))
 
 #_(navigate! ship asteroid-field)
 
 (defn flight-mode! [ship mode]
   (let [mode (-> mode name str/upper-case)]
-    (trace "Ship" (sym ship) "sets flight mode to" mode)
-    (call-hooks :before :flight-mode ship mode)
-    (when-let [response
-               (q :patch-ship-nav {:shipSymbol (sym ship)
-                                   :flightMode mode})]
-      ;; TODO: update state
-      (call-hooks :after :flight-mode ship mode)
-      response)))
+    (trace "Ship" (sym ship) "is about to set flight mode to" mode)
+    (call-hooks :before :flight-mode {:ship ship
+                                      :mode mode})
+    (if-let [response
+             (q :patch-ship-nav {:shipSymbol (sym ship)
+                                 :flightMode mode})]
+      (do
+        ;; diligence
+        (when-let [unused (not-empty (dissoc response :x))]
+          (warn "UNUSED BY flight-mode!" (prn-str unused)))
+        ;; tracing
+        (debug "Ship" (sym ship) "set flight mode to" mode)
+        ;; update state
+        ;; this assocs a scalar so assoc is fine
+        (swap! state assoc-in [:ships (keyword (sym ship)) :nav :mode] mode)
+        ;; callbacks
+        (call-hooks :after :flight-mode {:ship ship
+                                         :mode mode})
+        ;; return
+        response)
+      (do
+        (debug "Ship" (sym ship) "failed to set flight mode to" mode)
+        (call-hooks :failed :flight-mode {:ship ship
+                                          :mode mode})))))
 
-#_(flight-mode! ship "BURN")
+#_(flight-mode! ship :burn)
 
-(defn warp! [ship destination]
-  (trace "Ship" (sym ship) "warping to" (sym destination))
-  (call-hooks :before :warp ship destination)
-  (when-let [response
-             ;; TODO: implement
-             (q :warp-ship {})]
-    ;; TODO: update state
-    (call-hooks :after :warp ship destination response)
-    response))
+(defn warp!
+  ([ship destination] (warp! ship destination {}))
+  ([ship destination {:keys [on-arrival] :as options}]
+   (trace "Ship" (sym ship) "is about to warp to" (sym destination))
+   (call-hooks :before :warp {:ship ship
+                              :destination destination})
+   (if-let [{:keys [nav] :as response}
+            ;; TODO: implement
+            (q :warp-ship {})]
+     (do
+       ;; diligence
+       (when-let [unused (not-empty (dissoc response :nav))]
+         (warn "UNUSED BY flight-mode!" (prn-str unused)))
+       ;; tracing
+       (debug "Ship" (sym ship) "is warping to" (sym destination) "arrival at" (-> nav :route :arrival))
+       ;; update state
+       (swap! state update-in [:ships (keyword (sym ship)) :nav]
+              util/deep-merge nav)
+       ;; scheduling
+       (if-let [arrival (-> nav :route :arrival)]
+         (schedule! arrival
+                    #(do
+                       (debug "Ship" (sym ship) "has arrived")
+                       (call-hooks :completed :warp {:ship ship
+                                                     :destination destination
+                                                     :nav nav
+                                                     :response response})
+                       (when on-arrival (on-arrival))))
+         (error "Schedule failed. No arrival in" (prn-str response)))
+       ;; callbacks
+       (call-hooks :after :warp {:ship ship
+                                 :destination destination
+                                 :nav nav
+                                 :response response})
+       ;; return
+       response)
+     (do
+       (debug "Ship" (sym ship) "failed to warp to" (sym destination))
+       (call-hooks :failed :flight-mode {:ship ship
+                                         :destination destination})))))
 
 (defn sell-cargo! [ship trade-symbol units]
-  (trace "Ship" (sym ship) "selling" units "units of" trade-symbol)
-  (call-hooks :before :sell-cargo ship trade-symbol units)
-  (when-let [response
-             (q :sell-cargo {:shipSymbol (sym ship)
-                             :symbol trade-symbol
-                             :units units})]
-    ;; TODO: update state
-    (call-hooks :after :sell-cargo ship trade-symbol units response)
-    response))
+  (trace "Ship" (sym ship) "is about to sell" units "units of" trade-symbol)
+  (call-hooks :before :sell-cargo {:ship ship
+                                   :trade-symbol trade-symbol
+                                   :units units})
+  (if-let [{:keys [transaction] :as response}
+           (q :sell-cargo {:shipSymbol (sym ship)
+                           :symbol trade-symbol
+                           :units units})]
+    (do
+      ;; diligence
+      (when-let [unused (not-empty (dissoc response :x))]
+        (warn "UNUSED BY sell-cargo!" (prn-str unused)))
+      ;; tracing
+      (debug "Ship" (sym ship) "sold" units "units of" trade-symbol "for" (:totalPrice transaction))
+      ;; update state
+      ;; TODO
+      ;; callbacks
+      (call-hooks :after :sell-cargo {:ship ship
+                                      :trade-symbol trade-symbol
+                                      :units units
+                                      :response response})
+      ;; return
+      response)
+    (do
+      (debug "Ship" (sym ship) "failed to sell" units "units of" trade-symbol)
+      (call-hooks :failed :sell-cargo {:ship ship
+                                       :trade-symbol trade-symbol
+                                       :units units}))))
 
-;; TODO: add option :on-cooldown
-(defn scan-systems! [ship]
-  (trace "Ship" (sym ship) "scans systems")
-  (call-hooks :before :scan-systems ship)
-  (when-let [{:keys [cooldown systems] :as response}
-             (q :create-ship-system-scan {:shipSymbol (sym ship)})]
-    (swap! state assoc-in [:ships (keyword (sym ship)) :cooldown] cooldown)
-    (->> systems
-         (map #(dissoc % :distance))
-         (util/index-by (comp keyword :symbol))
-         (swap! state update :systems util/deep-merge))
-    ;; TODO: maybe use distance, but maybe not because it can easily be calculated
-    (call-hooks :after :scan-systems ship systems cooldown)
-    response))
+(defn scan-systems!
+  ([ship] (scan-systems! ship {}))
+  ([ship {:keys [on-cooldown] :as options}]
+   (trace "Ship" (sym ship) "is about to scan systems")
+   (call-hooks :before :scan-systems {:ship ship
+                                      :options options})
+   (if-let [{:keys [cooldown systems] :as response}
+            (q :create-ship-system-scan {:shipSymbol (sym ship)})]
+     (do
+       ;; diligence
+       (when-let [unused (not-empty (dissoc response :cooldown :systems))]
+         (warn "UNUSED BY scan-systems!" (prn-str unused)))
+       ;; tracing
+       (debug "Ship" (sym ship) "scanned" (count systems) "systems")
+       ;; update state
+       (swap! state update-in [:ships (keyword (sym ship)) :cooldown]
+              util/deep-merge cooldown)
+       ;; TODO: maybe use distance, but maybe not because it can easily be calculated
+       (->> systems
+            (map #(dissoc % :distance))
+            (util/index-by (comp keyword :symbol))
+            (swap! state update :systems util/deep-merge))
+       ;; scheduling
+       (if-let [expiration (:expiration cooldown)]
+         (schedule! expiration
+                    #(do
+                       (debug "Ship" (sym ship) "completed cooldown after scanning systems")
+                       (call-hooks :completed :scan-systems {:ship ship
+                                                             :systems systems
+                                                             :cooldown cooldown})
+                       (when on-cooldown (on-cooldown))))
+         (error "Schedule failed. No expiration in" (prn-str response)))
+       ;; callbacks
+       (call-hooks :after :scan-systems {:ship ship
+                                         :systems systems
+                                         :cooldown cooldown})
+       ;; return
+       response)
+     (do
+       (debug "Ship" (sym ship) "failed to scan systems")
+       (call-hooks :failed :scan-systems {:ship ship})))))
 
 #_(scan-systems! ship)
 
-;; TODO: add option :on-cooldown
-(defn scan-waypoints! [ship]
-  (trace "Ship" (sym ship) "scans waypoints")
-  (call-hooks :before :scan-waypoints ship)
-  (when-let [{:keys [cooldown waypoints] :as response}
-             (q :create-ship-waypoint-scan {:shipSymbol (sym ship)})]
-    (swap! state assoc-in [:ships (keyword (sym ship)) :cooldown] cooldown)
-    (->> waypoints
-         (util/index-by (comp keyword :symbol))
-         (swap! state update :waypoints util/deep-merge))
-    (call-hooks :after :scan-waypoints ship waypoints cooldown)
-    response))
+(defn scan-waypoints!
+  ([ship] (scan-waypoints! ship {}))
+  ([ship {:keys [on-cooldown] :as options}]
+   (trace "Ship" (sym ship) "is about to scan waypoints")
+   (call-hooks :before :scan-waypoints {:ship ship
+                                        :options options})
+   (if-let [{:keys [cooldown waypoints] :as response}
+            (q :create-ship-waypoint-scan {:shipSymbol (sym ship)})]
+     (do
+       ;; diligence
+       (when-let [unused (not-empty (dissoc response :cooldown :waypoints))]
+         (warn "UNUSED BY scan-waypoints!" (prn-str unused)))
+       ;; tracing
+       (debug "Ship" (sym ship) "scanned" (count waypoints) "waypoints")
+       ;; update state
+       (swap! state update-in [:ships (keyword (sym ship)) :cooldown]
+              util/deep-merge cooldown)
+       (->> waypoints
+            (util/index-by (comp keyword :symbol))
+            (swap! state update :waypoints util/deep-merge))
+       ;; scheduling
+       (if-let [expiration (:expiration cooldown)]
+         (schedule! expiration
+                    #(do
+                       (debug "Ship" (sym ship) "completed cooldown after scanning waypoints")
+                       (call-hooks :completed :scan-waypoints {:ship ship
+                                                               :waypoints waypoints
+                                                               :cooldown cooldown})
+                       (when on-cooldown (on-cooldown))))
+         (error "Schedule failed. No expiration in" (prn-str response)))
+       ;; callbacks
+       (call-hooks :after :scan-waypoints {:ship ship
+                                           :waypoints waypoints
+                                           :cooldown cooldown})
+       ;; return
+       response)
+     (do
+       (debug "Ship" (sym ship) "failed to scan waypoints")
+       (call-hooks :failed :scan-waypoints {:ship ship})))))
 
 #_(scan-waypoints! ship)
 
-;; TODO: add option :on-cooldown
-(defn scan-ships! [ship]
-  (trace "Ship" (sym ship) "scans ships")
-  (call-hooks :before :scan-ships ship)
-  (when-let [response
-             (q :create-ship-ship-scan {:shipSymbol (sym ship)})]
-    ;; TODO: update state
-    (call-hooks :after :scan-ships ship response)
-    response))
+(defn scan-ships!
+  ([ship] (scan-ships! ship {}))
+  ([ship {:keys [on-cooldown] :as options}]
+   (trace "Ship" (sym ship) "is about to scan ships")
+   (call-hooks :before :scan-ships {:ship ship
+                                    :options options})
+   (if-let [{:keys [cooldown ships] :as response}
+            (q :create-ship-waypoint-scan {:shipSymbol (sym ship)})]
+     (do
+       ;; diligence
+       (when-let [unused (not-empty (dissoc response :cooldown :ships))]
+         (warn "UNUSED BY scan-ships!" (prn-str unused)))
+       ;; tracing
+       (debug "Ship" (sym ship) "scanned" (count ships) "ships")
+       ;; update state
+       (swap! state update-in [:ships (keyword (sym ship)) :cooldown]
+              util/deep-merge cooldown)
+       ;; TODO: store ships somewhere
+       ;; scheduling
+       (if-let [expiration (:expiration cooldown)]
+         (schedule! expiration
+                    #(do
+                       (debug "Ship" (sym ship) "completed cooldown after scanning ships")
+                       (call-hooks :completed :scan-ships {:ship ship
+                                                           :ships ships
+                                                           :cooldown cooldown})
+                       (when on-cooldown (on-cooldown)))))
+       ;; callbacks
+       (call-hooks :after :scan-ships {:ship ship
+                                       :ships ships
+                                       :cooldown cooldown})
+       ;; return
+       response)
+     (do
+       (debug "Ship" (sym ship) "failed to scan ships")
+       (call-hooks :failed :scan-ships {:ship ship})))))
 
 #_(scan-ships! ship)
 
 (defn refuel! [ship]
   (trace "Ship" (sym ship) "refuels")
-  (call-hooks :before :refuel ship)
-  (when-let [response
-             (q :refuel-ship {:shipSymbol (sym ship)})]
-    ;; TODO: update state
-    (call-hooks :after :refuel ship response)
-    response))
+  (call-hooks :before :refuel {:ship ship})
+  (if-let [response
+           (q :refuel-ship {:shipSymbol (sym ship)})]
+    (do
+      ;; diligence
+      (when-let [unused (not-empty (dissoc response :x))]
+        (warn "UNUSED BY refuel!" (prn-str unused)))
+      ;; tracing
+      (debug "Ship" (sym ship) "refueled")
+      ;; update state
+      ;; TODO
+      ;; callbacks
+      (call-hooks :after :refuel {:ship ship
+                                  :response response})
+      ;; return
+      response)
+    (do
+      (debug "Ship" (sym ship) "failed to refuel")
+      (call-hooks :failed :refuel {:ship ship}))))
 
 #_(refuel! ship)
 
 (defn purchase-cargo! [ship trade units]
-  (trace "Ship" (sym ship) "purchases" units "units of" trade)
-  (call-hooks :before :purchase-cargo ship trade units)
-  (when-let [response
-             (q :purchase-cargo {:shipSymbol (sym ship)
-                                 :symbol trade
-                                 :units units})]
-    ;; TODO: update state
-    ;; (info "Ship" (sym ship) "purchased" units "units of" trade "for" (-> response :transaction :totalPrice))
-    (call-hooks :after :purchase-cargo ship trade units response)
-    response))
+  (trace "Ship" (sym ship) "is about to purchase" units "units of" trade)
+  (call-hooks :before :purchase-cargo {:ship ship
+                                       :trade trade
+                                       :units units})
+  (if-let [{:keys [transaction cargo] :as response}
+           (q :purchase-cargo {:shipSymbol (sym ship)
+                               :symbol trade
+                               :units units})]
+    (do
+      ;; diligence
+      (when-let [unused (not-empty (dissoc response :x))]
+        (warn "UNUSED BY purchase-cargo!" (prn-str unused)))
+      ;; tracing
+      (debug "Ship" (sym ship) "purchased" units "units of" trade "for" (:totalPrice transaction))
+      ;; update state
+      ;; TODO
+      ;; callbacks
+      (call-hooks :after :purchase-cargo {:ship ship
+                                          :trade trade
+                                          :units units
+                                          :response response})
+      ;; return
+      response)
+    (do
+      (debug "Ship" (sym ship) "failed to purchase" units "units of" trade)
+      (call-hooks :failed :purchase-cargo {:ship ship
+                                           :trade trade
+                                           :units units}))))
 
 #_(purchase-cargo! ship "ANTIMATTER" 1)
 
 ;; NOTE: this requires the swagger spec to be fixed, the query
 ;; parameter need to be called `shipSymbol2`
 (defn transfer! [from to trade units]
-  (trace "Ship" (sym from) "transfers" units "of" trade "to ship" (sym to))
-  (call-hooks :before :transfer from to trade units)
-  (when-let [{:keys [cargo] :as response}
-             (q :transfer-cargo {:shipSymbol2 (sym from)
-                                 :shipSymbol (sym to)
-                                 :tradeSymbol trade
-                                 :units units})]
-    ;; TODO: update state
-    ;; (info "Ship" (sym from) "transfered" units "of" trade "to ship" (sym to))
-    (call-hooks :after :transfer from to trade units cargo response)
-    response))
+  (trace "Ship" (sym from) "is about to transfer" units "of" trade "to ship" (sym to))
+  (call-hooks :before :transfer {:from from
+                                 :to to
+                                 :trade trade
+                                 :units units})
+  (if-let [{:keys [cargo] :as response}
+           (q :transfer-cargo {:shipSymbol2 (sym from)
+                               :shipSymbol (sym to)
+                               :tradeSymbol trade
+                               :units units})]
+    (do
+      ;; diligence
+      (when-let [unused (not-empty (dissoc response :x))]
+        (warn "UNUSED BY transfer!" (prn-str unused)))
+      ;; tracing
+      (debug "Ship" (sym from) "transfered" units "of" trade "to ship" (sym to))
+      ;; update state
+      ;; TODO
+      ;; callbacks
+      (call-hooks :after :transfer {:from from
+                                    :to to
+                                    :trade trade
+                                    :units units
+                                    :cargo cargo
+                                    :response response})
+      response)
+    (do
+      (debug "Ship" (sym from) "failed to transfer" units "units of" trade "to ship" (sym to))
+      (call-hooks :failed :transfer {:from from
+                                     :to to
+                                     :trade trade
+                                     :units units}))))
 
-;; TODO: does this work?
 (defn negotiate-contract! [ship]
-  (trace "Ship" (sym ship) "negotiates a contract")
-  (call-hooks :before :negotiate-contract ship)
-  (when-let [{:keys [contract] :as response}
-             (q :negotiate-contract {:shipSymbol (sym ship)})]
-    ;; TODO: update state
-    (call-hooks :before :negotiate-contract ship contract response)
-    response))
+  (trace "Ship" (sym ship) "is about to negotiate a contract")
+  (call-hooks :before :negotiate-contract {:ship ship})
+  (if-let [{:keys [contract] :as response}
+           (q :negotiate-contract {:shipSymbol (sym ship)})]
+    (do
+      ;; diligence
+      (when-let [unused (not-empty (dissoc response :contract))]
+        (warn "UNUSED BY negotiate-contract!" (prn-str unused)))
+      ;; tracing
+      (debug "Ship" (sym ship) "negotiated a contract:" (prn-str contract))
+      ;; update state
+      ;; this is a new contract, hence assoc-in is fine
+      (swap! state assoc-in [:contracts (keyword (:id contract))] contract)
+      ;; callbacks
+      (call-hooks :after :negotiate-contract {:ship ship
+                                              :contract contract
+                                              :response response})
+      ;; return
+      response)
+    (do
+      (debug "Ship" (sym ship) "failed to negotiate contract")
+      (call-hooks :failed :negotiate-contract {:ship ship}))))
 
 ;;;; contracts
 
 (defn deliver-contract! [ship contract trade units]
   (let [id (or (:id contract) contract)]
-    (trace "Ship" (sym ship) "delivers" units "units of" trade "for contract" id)
-    (call-hooks :before :deliver-contract ship contract trade units)
-    (when-let [response (q :deliver-contract {:contractId id
-                                              :shipSymbol (sym ship)
-                                              :tradeSymbol trade
-                                              :units units})]
-      ;; TODO: update state
-      (call-hooks :after :deliver-contract ship contract trade units response)
-      response)))
+    (trace "Ship" (sym ship) "delivers" units "units of" trade "on contract" id)
+    (call-hooks :before :deliver-contract {:ship ship
+                                           :contract contract
+                                           :trade trade
+                                           :units units})
+    (if-let [response
+             (q :deliver-contract {:contractId id
+                                   :shipSymbol (sym ship)
+                                   :tradeSymbol trade
+                                   :units units})]
+      (do
+        ;; diligence
+        (when-let [unused (not-empty (dissoc response :x))]
+          (warn "UNUSED BY deliver-contract!" (prn-str unused)))
+        ;; tracing
+        (debug "Ship" (sym ship) "delivered" units "units of" trade "on contract" id)
+        ;; update state
+        ;; TODO
+        ;; callbacks
+        (call-hooks :after :deliver-contract {:ship ship
+                                              :contract contract
+                                              :trade trade
+                                              :units units
+                                              :response response})
+        ;; return
+        response)
+      (do
+        (debug "Ship" (sym ship) "failed to deliver" units "units of" trade "on contract" id)
+        (call-hooks :failed :deliver-contract {:ship ship
+                                               :contract contract
+                                               :trade trade
+                                               :units units})))))
 
 (defn accept-contract! [contract]
   (let [id (or (:id contract) contract)]
-    (trace "Accepting contract" id)
-    (call-hooks :before :accept-contract contract)
-    (when-let [{:keys [contract agent] :as response}
-               (q :accept-contract {:contractId id})]
-      ;; TODO: update state
-      (call-hooks :after :accept-contract contract agent)
-      response)))
+    (trace "About to accept contract" id)
+    (call-hooks :before :accept-contract {:contract contract})
+    (if-let [{:keys [contract agent] :as response}
+             (q :accept-contract {:contractId id})]
+      (do
+        ;; diligence
+        (when-let [unused (not-empty (dissoc response :contract :agent))]
+          (warn "UNUSED BY accept-contract!" (prn-str unused)))
+        ;; tracing
+        (debug "Accepted contract" id)
+        ;; update state
+        (swap! state update-in [:contracts (keyword id)]
+               util/deep-merge contract)
+        (swap! state update :agent
+               util/deep-merge agent)
+        ;; callbacks
+        (call-hooks :after :accept-contract {:contract contract
+                                             :agent agent
+                                             :response response})
+        ;; return
+        response)
+      (do
+        (debug "Failed to accept contract" id)
+        (call-hooks :failed :accept-contract {:contract contract})))))
 
 (defn fulfill-contract! [contract]
   (let [id (or (:id contract) contract)]
-    (trace "Fullfilling contract" id)
-    (call-hooks :before :fulfill-contract contract)
-    (when-let [{:keys [contract agent] :as response}
-               (q :fulfill-contract {:contractId id})]
-      ;; TODO: update state
-      (call-hooks :after :fulfill-contract contract agent)
-      response)))
+    (trace "About to fulfill contract" id)
+    (call-hooks :before :fulfill-contract {:contract contract})
+    (if-let [{:keys [contract agent] :as response}
+             (q :fulfill-contract {:contractId id})]
+      (do
+        ;; diligence
+        (when-let [unused (not-empty (dissoc response :contract :agent))]
+          (warn "UNUSED BY fulfill-contract!" (prn-str unused)))
+        ;; tracing
+        (debug "Fulfilled contracts" id)
+        ;; update state
+        (swap! state update-in [:contracts (keyword (:id contract))]
+               util/deep-merge contract)
+        (swap! state update :agent
+               util/deep-merge agent)
+        ;; callbacks
+        (call-hooks :after :fulfill-contract {:contract contract
+                                              :agent agent
+                                              :response response})
+        ;; return
+        response)
+      (do
+        (debug "Failed to fulfill contract" id)
+        (call-hooks :failed :fulfill-contract {:contract contract})))))
 
 #_(fulfill-contract! (-> @state :contracts vals first))
+
+"Loaded api."

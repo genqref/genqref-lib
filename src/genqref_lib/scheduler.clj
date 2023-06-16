@@ -9,24 +9,27 @@
 (defn- due-action? [[ts f]]
   (pos? (compare (t/now) ts)))
 
-(defn start! []
-  (debug "Starting scheduler at UTC:" (t/now))
+(defonce scheduler
   (util/safe-future
-   (while true
-     (util/sleep 1)
-     (let [due (filter due-action? @schedule)]
-       (doseq [[time f] due]
-         (do
-           (trace "Perform function call scheduled for" time)
-           (util/safe-future (f))
-           (swap! schedule dissoc time)))))))
+   (do
+     (debug "Starting scheduler at UTC:" (t/now))
+     (while true
+       (util/sleep 1)
+       (let [due (filter due-action? @schedule)]
+         (doseq [[time f] due]
+           (do
+             (trace "Perform for" time)
+             (util/safe-future (f))
+             (swap! schedule dissoc time))))))))
 
 ;; TODO: this works but should probably be a macro instead so we can
 ;; retain a human readable and more important seriazable version of
 ;; `f`
 (defn schedule! [time f]
-  (trace "Scheduling function call for" time)
+  (trace "Scheduled for" time)
   (swap! schedule assoc time f))
 
 (defn cancel-everything! []
   (reset! schedule {}))
+
+#_(cancel-everything!)
