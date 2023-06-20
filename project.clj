@@ -1,4 +1,4 @@
-(defproject com.github.genqref/genqref-lib "0.1.0"
+(defproject com.github.genqref/genqref-lib "0.1.0-SNAPSHOT"
   :description "batteries-included API Wrapper for the great Space Traders API "
   :url "https://github.com/genqref/genqref-lib"
   :license {:name "EPL-2.0 OR GPL-2.0-or-later WITH Classpath-exception-2.0"
