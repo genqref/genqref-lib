@@ -14,7 +14,8 @@
             [genqref-lib.time :as t]
             [genqref-lib.util :as util :refer [sym]]
             [genqref-lib.scheduler :refer [schedule!]]
-            [slingshot.slingshot :refer [try+ throw+]])
+            [slingshot.slingshot :refer [try+ throw+]]
+            [throttler.core :refer [throttle-fn]])
   (:gen-class))
 
 ;;; public api
@@ -122,135 +123,136 @@
   message. "
   [message]
   ;; "Ship extract failed. Survey X1-VS75-67965Z-97E75E has been exhausted."
+  (error message)
   (let [signature (second (re-find #"Survey ([0-9A-Z-]+) has" message))
         waypoint (parse-waypoint signature)]
     (swap! state update-in [:surveys (keyword waypoint)]
            (partial remove #(-> % :signature (= signature))))
-    ;; TODO: use only keywords everywhere
     (swap! state update-in [:surveys waypoint]
            (partial remove #(-> % :signature (= signature))))
     (info "Removed survey" signature "with depleted deposits")))
+
+(defn- remove-survey* [survey]
+  (let [signature (:signature survey)
+        waypoint (parse-waypoint signature)]
+    (swap! state update-in [:surveys (keyword waypoint)]
+           (partial remove #(-> % :signature (= signature))))
+    (swap! state update-in [:surveys waypoint]
+           (partial remove #(-> % :signature (= signature))))
+    (info "Removed invalid survey" signature)))
 
 ;; https://docs.spacetraders.io/api-guide/response-errors
 ;; TODO: handle network issues with retrying
 ;; TODO: catch registration required after reset
 (defn- q* [args]
   (let [result
-        (try+
-         (let [response (apply (partial martian/response-for *api*) args)]
-           (-> response deref :body :data))
-         (catch [:status 400] {:keys [request-time headers body] :as e}
-           (let [{{:keys [code message]} :error} (json/parse-string body true)]
-             (info "Error" code (str "(400)") message)
-             ;; some error codes we can recover from
-             (case code
-               ;; Failed to execute jump. System ... is out of range.
-               ;; ?
-               ;;
-               ;; 400 - The jump drive / gate has a range of 500
-               ;; units. Ship transfer failed. Both ships must be
-               ;; docked or both ships must be in orbit.
-               400 (do)
-               ;; 4202 - Navigate request failed. Destination
-               ;; X1-VS75-93799Z is outside the X1-XN54 system.
-               4202 (do)
-               ;; 4203 - Navigate request failed. Ship GENQREF-3
-               ;; requires 56 more fuel for navigation.
-               4203 (do
-                      (dock! (:shipSymbol (second args)))
-                      (refuel! (:shipSymbol (second args)))
-                      (orbit! (:shipSymbol (second args)))
-                      {:retry 0})
-               ;; 4204 - Navigate request failed. Ship GENQREF-3 is
-               ;; currently located at the destination.
-               4204 (do)
-               ;; 4205 - Ship extract failed. PLANET is not a valid
-               ;; location for extracting minerals.
-               4205 (throw e)
-               ;; 4208 - Failed to execute jump. Ship cannot execute
-               ;; jump to the system it is currently located in.
-               4208 (do)
-               ;; 4214 - Ship action failed. Ship is not currently in
-               ;; orbit at ...
-               4214 (do)
-               ;; 4216 - Failed to purchase ship. Agent has insufficient funds.
-               4216 (do)
-               ;; 4217 - Failed to update ship cargo. Cannot add 3
-               ;; unit(s) to ship cargo. Exceeds max limit of 30.
-               4217 (do)
-               ;; 4219 - Ship is not at the delivery destination.
-               ;; Expected ..., but ship is at ...
-               4219 (do)
-               ;; 4221 - Ship survey failed. Target signature is no
-               ;; longer in range or valid.
-               4221 (do)
-               ;; 4222 - Ship survey failed. Ship GENQREF-1 is not at
-               ;; a valid location for surveying.
-               4222 (do)
-               ;; 4228 - Failed to update ship cargo. Ship is at
-               ;; maximum capacity and has 0 units of available space.
-               4228 (do)
-               ;; 4230 - Waypoint already charted: X1-PZ25-44312A
-               4230 (do)
-               ;; 4236 - Ship is currently in-transit from ... to ...
-               ;; and arrives in ... seconds.
-               4236 (do (orbit! (:shipSymbol (second args))) {:retry 0})
-               ;; 4244 - Ship action failed. Ship is not currently
-               ;; docked at X1-VS75-67965Z.
-               4244 (do)
-               ;; 4509 - Contract delivery terms for IRON_ORE have been met.
-               4509 (do) ;; TODO: fullfill contract
-               ;; 4510 - Failed to update ship cargo. Ship ... cargo
-               ;; does not contain ...
-               4510 (do)
-               ;; 4601 - Market purchase failed. Trade good FUEL is
-               ;; not available at X1-VX95-71385D.
-               4601 (do)
-               ;; 4602 - Market sell failed. Trade good IRON_ORE is
-               ;; not available at X1-VS75-70500X.
-               4602 (do)
-               ;; default
-               (let [file (str "error_" code "_" (t/now) ".edn")]
-                 (spit file (prn-str e))
-                 (info "Full report written to" file)))))
-         (catch [:status 409] {:keys [request-time headers body] :as e}
-           (let [{{:keys [code message data]} :error} (json/parse-string body true)]
-             (info "Error" code (str "(409)") message)
-             (prn data)
-             (case code
-               ;; Ship GENQREF-2 is currently locked while processing
-               ;; another request. Concurrent requests to control a
-               ;; ship are not supported.
-               409 (do)
-               4000 data
-               ;; 4224 - Ship extract failed. Survey X1-VS75-67965Z-97E75E has been exhausted.
-               4224 (remove-survey message)
-               ;; default
-               (let [file (str "error_" code "_" (t/now) ".edn")]
-                 (spit file (prn-str e))
-                 (info "Full report written to" file)))))
-         ;; exceeded the rate limit
-         (catch [:status 429] {:keys [request-time headers body]}
-           (let [{:keys [error]} (json/parse-string body true)
-                 timeout (-> error :data :retryAfter)]
-             ;; (prn error)
-             ;; (info (-> error :data))
-             ;; (info (-> error :data :retryAfter))
-             (info ">>> We're going too fast (429), timeout for" timeout "seconds. <<<")
-             {:retry timeout}))
-         (catch [:status 502] _
-           ;; The server encountered a temporary error and could not
-           ;; complete your request. Please try again in 30 seconds.
-           (info ">>> Encountered a server error (502). Retry in 30s, as advised. <<<")
-           {:retry 30}))]
+        (let [response (deref (apply (partial martian/response-for *api*) args))]
+          (cond
+            (-> response :status #{200 201 204})
+            (-> response :body :data)
+
+            (-> response :status #{400 409})
+            (let [{{:keys [code message]} :error} (-> response :body)]
+              (error "API Error" code message)
+              (case code
+                ;; Failed to execute jump. System ... is out of range.
+                ;; ?
+                ;;
+                ;; 400 - The jump drive / gate has a range of 500
+                ;; units. Ship transfer failed. Both ships must be
+                ;; docked or both ships must be in orbit.
+                400 (do)
+                ;; 4202 - Navigate request failed. Destination
+                ;; X1-VS75-93799Z is outside the X1-XN54 system.
+                4202 (do)
+                ;; 4203 - Navigate request failed. Ship GENQREF-3
+                ;; requires 56 more fuel for navigation.
+                4203 (do
+                       (dock! (:shipSymbol (second args)))
+                       (refuel! (:shipSymbol (second args)))
+                       (orbit! (:shipSymbol (second args)))
+                       {:retry 0})
+                ;; 4204 - Navigate request failed. Ship GENQREF-3 is
+                ;; currently located at the destination.
+                4204 (do)
+                ;; 4205 - Ship extract failed. PLANET is not a valid
+                ;; location for extracting minerals.
+                4205 (throw message)
+                ;; 4208 - Failed to execute jump. Ship cannot execute
+                ;; jump to the system it is currently located in.
+                4208 (do)
+                ;; 4214 - Ship action failed. Ship is not currently in
+                ;; orbit at ...
+                4214 (do)
+                ;; 4216 - Failed to purchase ship. Agent has insufficient funds.
+                4216 (do)
+                ;; 4217 - Failed to update ship cargo. Cannot add 3
+                ;; unit(s) to ship cargo. Exceeds max limit of 30.
+                4217 (do)
+                ;; 4219 - Ship is not at the delivery destination.
+                ;; Expected ..., but ship is at ...
+                4219 (do)
+                ;; 4221 - Ship survey failed. Target signature is no
+                ;; longer in range or valid.
+                4221 (remove-survey* (-> args second :survey))
+                ;; 4222 - Ship survey failed. Ship GENQREF-1 is not at
+                ;; a valid location for surveying.
+                4222 (do)
+                ;; 4228 - Failed to update ship cargo. Ship is at
+                ;; maximum capacity and has 0 units of available space.
+                4228 (do)
+                ;; 4230 - Waypoint already charted: X1-PZ25-44312A
+                4230 (do)
+                ;; 4236 - Ship is currently in-transit from ... to ...
+                ;; and arrives in ... seconds.
+                4236 (do (orbit! (:shipSymbol (second args))) {:retry 0})
+                ;; 4244 - Ship action failed. Ship is not currently
+                ;; docked at X1-VS75-67965Z.
+                4244 (do)
+                ;; 4509 - Contract delivery terms for IRON_ORE have been met.
+                4509 (do) ;; TODO: fullfill contract
+                ;; 4510 - Failed to update ship cargo. Ship ... cargo
+                ;; does not contain ...
+                4510 (do)
+                ;; 4601 - Market purchase failed. Trade good FUEL is
+                ;; not available at X1-VX95-71385D.
+                4601 (do)
+                ;; 4602 - Market sell failed. Trade good IRON_ORE is
+                ;; not available at X1-VS75-70500X.
+                4602 (do)
+                ;; Ship GENQREF-2 is currently locked while processing
+                ;; another request. Concurrent requests to control a
+                ;; ship are not supported.
+                409 (do)
+                ;; 4224 - Ship extract failed. Survey X1-VS75-67965Z-97E75E has been exhausted.
+                4224 (remove-survey message)
+                ;; default
+                (error "Unknown error:" message)))
+            ;; exceeded the rate limit
+            (-> response :status #{429})
+            (let [{:keys [error]} (-> response :body) ;; (json/parse-string body true)
+                  timeout (-> error :data :retryAfter)]
+              ;; (prn error)
+              ;; (info (-> error :data))
+              ;; (info (-> error :data :retryAfter))
+              (info ">>> We're going too fast (429), timeout for" timeout "seconds. <<<")
+              {:retry timeout})
+            (-> response :status #{502})
+            ;; The server encountered a temporary error and could not
+            ;; complete your request. Please try again in 30 seconds.
+            (do
+              (info ">>> Encountered a server error (502). Retry in 30s, as advised. <<<")
+              {:retry 30})))]
     (if (contains? result :retry)
       (do
         (Thread/sleep (* 1000 (or (:retry result) 5)))
         (recur args))
       result)))
 
+(def q** (throttle-fn q* 2 :second 1))
+
 (defn q [& args]
-  (q* args))
+  (q** args))
 
 ;;; state (local cache)
 
@@ -267,10 +269,20 @@
   (when (and x y)
     (str "[" x "," y "]")))
 
+(defn role [ship]
+  (-> ship :registration :role str/lower-case keyword))
+
+#_(role ship)
+
+(defn ship-has? [ship mount]
+  ((->> ship :mounts (map :symbol) set) mount))
+
+#_(ship-has? ship "MOUNT_SURVEYOR_I")
+
 ;;; operations on state
 
 (defn ship-by-name [name]
-  (-> @state :ships (get name)))
+  (-> @state :ships (get (keyword name))))
 
 (defn waypoints-with-traits
   ([traits]
@@ -306,6 +318,35 @@
        (filter #(-> %
                     :systemSymbol
                     (= (sym system))))))
+
+(defn jumpgate-by-system [system]
+  (let [jumpgates (->> @state :jumpgates (filter #(-> % first name util/parse-system (= system))) vals)]
+    ;; (assert (<= (count jumpgates) 1) (prn-str jumpgates))
+    (first jumpgates)))
+
+(defn active-contracts []
+  (->> @state :contracts vals (filter :accepted) (remove :fulfilled) not-empty))
+
+(defn active-contract []
+  (let [contracts (active-contracts)]
+    (assert (= 1 (count contracts)) "Once upon the time you could only have one contract.")
+    (first contracts)))
+
+#_(active-contracts)
+
+(defn closest-market-to-waypoint [waypoint]
+  (let [waypoint (get-in @state [:waypoints (keyword (sym waypoint))])]
+    (->> waypoint
+         :systemSymbol
+         waypoints-of-system
+         (waypoints-with-traits ["MARKETPLACE"])
+         ;; FIXME: planets and their orbitals have a distance of 0
+         (sort-by #(util/distance % waypoint))
+         first
+         :symbol
+         keyword
+         (conj [:markets])
+         (get-in @state))))
 
 ;;; hooks
 
@@ -870,14 +911,15 @@
                                :waypointSymbol (sym destination)})]
      (do
        ;; diligence
-       (when-let [unused (not-empty (dissoc response :nav))]
+       (when-let [unused (not-empty (dissoc response :nav :fuel))]
          (warn "UNUSED BY navigate!" (prn-str unused)))
        ;; tracing
        (debug "Ship" (sym ship) "in transit to" (sym destination)
               (str "(" (:type destination) ")") "arrival at" (-> nav :route :arrival))
        ;; update state
-       (swap! state update-in [:ships (keyword (sym ship)) :nav]
-              util/deep-merge nav)
+       (swap! state update-in [:ships (keyword (sym ship))]
+              util/deep-merge {:nav nav
+                               :fuel fuel})
        ;; TODO: use fuel
        ;; scheduling
        (if-let [arrival (-> nav :route :arrival)]
@@ -977,18 +1019,22 @@
   (call-hooks :before :sell-cargo {:ship ship
                                    :trade-symbol trade-symbol
                                    :units units})
-  (if-let [{:keys [transaction] :as response}
+  (if-let [{:keys [transaction agent cargo] :as response}
            (q :sell-cargo {:shipSymbol (sym ship)
                            :symbol trade-symbol
                            :units units})]
     (do
       ;; diligence
-      (when-let [unused (not-empty (dissoc response :x))]
+      (when-let [unused (not-empty (dissoc response :transaction :agent :cargo))]
         (warn "UNUSED BY sell-cargo!" (prn-str unused)))
       ;; tracing
       (debug "Ship" (sym ship) "sold" units "units of" trade-symbol "for" (:totalPrice transaction))
       ;; update state
-      ;; TODO
+      (swap! state update :agent
+             util/deep-merge agent)
+      (swap! state update-in [:ships (keyword (sym ship)) :cargo]
+             util/deep-merge cargo)
+      ;; TODO: do someting with transaction
       ;; callbacks
       (call-hooks :after :sell-cargo {:ship ship
                                       :trade-symbol trade-symbol
@@ -1130,16 +1176,20 @@
 (defn refuel! [ship]
   (trace "Ship" (sym ship) "refuels")
   (call-hooks :before :refuel {:ship ship})
-  (if-let [response
+  (if-let [{:keys [agent fuel transaction] :as response}
            (q :refuel-ship {:shipSymbol (sym ship)})]
     (do
       ;; diligence
-      (when-let [unused (not-empty (dissoc response :x))]
+      (when-let [unused (not-empty (dissoc response :agent :fuel :transaction))]
         (warn "UNUSED BY refuel!" (prn-str unused)))
       ;; tracing
       (debug "Ship" (sym ship) "refueled")
       ;; update state
-      ;; TODO
+      (swap! state update :agent
+             util/deep-merge agent)
+      (swap! state update-in [:ships (keyword (sym ship)) :fuel]
+             util/deep-merge fuel)
+      ;; TODO: store transaction somewhere
       ;; callbacks
       (call-hooks :after :refuel {:ship ship
                                   :response response})
