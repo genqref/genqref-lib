@@ -249,6 +249,7 @@
         (recur args))
       result)))
 
+;; NOTE: bursts in this lib work different than for st-api
 (def q** (throttle-fn q* 2 :second 1))
 
 (defn q [& args]
