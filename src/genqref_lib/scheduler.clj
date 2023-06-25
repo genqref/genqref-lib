@@ -4,6 +4,7 @@
             [taoensso.timbre :as timbre :refer [debug trace]])
   (:gen-class))
 
+;; TODO: maybe make this a duratom
 (defonce ^:private schedule (atom {}))
 
 (defn- due-action? [[ts f]]

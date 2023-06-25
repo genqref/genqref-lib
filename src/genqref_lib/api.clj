@@ -58,6 +58,9 @@
     (warn "There is already a token for the current run. Abort.")
     (when-let [{:keys [token agent contract faction ship] :as response}
                (:data (:body @(martian/response-for public-api :register options)))]
+      ;; diligence
+      (when-let [unused (not-empty (dissoc response :token :agent :contract :faction :ship))]
+        (warn "UNUSED BY register!" (prn-str unused)))
       (let [{:keys [resetDate]} (status)]
         (swap! tokens assoc resetDate token)
         (reset! state {:resetDate resetDate
@@ -144,6 +147,7 @@
 ;; https://docs.spacetraders.io/api-guide/response-errors
 ;; TODO: handle network issues with retrying
 ;; TODO: catch registration required after reset
+;; TODO: rename q, q* and q** to request, request* and request**
 (defn- q* [args]
   (let [result
         (let [response (deref (apply (partial martian/response-for *api*) args))]
@@ -280,7 +284,16 @@
 
 #_(ship-has? ship "MOUNT_SURVEYOR_I")
 
+(defn get-waypoint [waypoints symbol]
+  (first (filter #(-> % :symbol (= symbol)) waypoints)))
+
+(defn min-sec [datetime]
+  (last (re-find #"(\d\d:\d\d)\." datetime)))
+
 ;;; operations on state
+
+(defn system-where-ship [ship]
+  (-> @state :systems (get (keyword (-> ship :nav :systemSymbol)))))
 
 (defn ship-by-name [name]
   (-> @state :ships (get (keyword name))))
@@ -324,6 +337,12 @@
   (let [jumpgates (->> @state :jumpgates (filter #(-> % first name util/parse-system (= system))) vals)]
     ;; (assert (<= (count jumpgates) 1) (prn-str jumpgates))
     (first jumpgates)))
+
+(defn jumpgates-of-system [system]
+  (->> @state
+       :jumpgates
+       vals
+       (filter #(-> % :systemSymbol (= system)))))
 
 (defn active-contracts []
   (->> @state :contracts vals (filter :accepted) (remove :fulfilled) not-empty))
@@ -390,8 +409,9 @@
 
 #_(call-hooks :after :jump "GENQREF-1" :asdf)
 
-
 ;;; GET (refresh, query the api and populate state)
+
+;; TODO: rename refresh and refresh! to `query` and `query!`
 
 (defmulti refresh (fn [entity _] entity))
 
@@ -458,6 +478,14 @@
            util/deep-merge nav)
     (call-hooks :updated :nav ship nav)
     nav))
+
+(defmethod refresh :mounts [_ ship]
+  (trace "Query mounts for ship" (sym ship))
+  (let [mounts (q :get-ship-mounts {:shipSymbol (sym ship)})]
+    (swap! state update-in [:ships (keyword (sym ship)) :mounts]
+           util/deep-merge mounts)
+    (call-hooks :updated :mounts ship mounts)
+    mounts))
 
 ;;;; contracts
 
@@ -567,6 +595,9 @@
 #_(def ship (refresh! :ship ship))
 
 ;;; POST/PATCH (actions)
+
+;; TODO: don't just lazily return the response, instead return updated
+;; entities like in `dock!`
 
 ;;;; fleet
 
@@ -720,7 +751,8 @@
       (call-hooks :after :dock {:ship ship
                                 :nav nav})
       ;; return
-      response)
+      {:ship (get-in @state [:ships (keyword (sym ship))])
+       :waypoint (get-in @state [:waypoints (keyword (:waypointSymbol nav))])})
     (do
       (debug "Ship" (sym ship) "failed to dock")
       (call-hooks :failed :dock {:ship ship}))))
@@ -1386,5 +1418,71 @@
         (call-hooks :failed :fulfill-contract {:contract contract})))))
 
 #_(fulfill-contract! (-> @state :contracts vals first))
+
+(defn install-mount! [ship mount]
+  (trace "About to install mount" (sym mount) "into ship" (sym ship))
+  (call-hooks :before :install-mount {:ship ship
+                                      :mount mount})
+  (if-let [{:keys [agent mounts cargo transaction] :as response}
+           (q :ship-install-mount {:shipSymbol (sym ship)
+                                   :symbol (sym mount)})]
+    (do
+      ;; diligence
+      (when-let [unused (not-empty (dissoc response :agent :mounts :cargo :transaction))]
+        (warn "UNUSED BY install-mount!" (prn-str unused)))
+      ;; tracing
+      (debug "Installed mount" (sym mount) "into ship" (sym ship))
+      ;; update state
+      (swap! state update-in [:ships (keyword (sym ship))]
+             util/deep-merge {:mounts mounts :cargo cargo})
+      (swap! state update :agent
+             util/deep-merge agent)
+      (swap! state update :transaction conj transaction)
+      ;; callbacks
+      (call-hooks :after :install-mount {:agent agent
+                                         :mounts mounts
+                                         :cargo cargo
+                                         :transaction transaction
+                                         :response response})
+      ;; return
+      {:ship (get-in @state [:ships (keywords (sym ship))])
+       :response response})
+    (do
+      (debug "Failed to install mount" (sym mount) "into ship" (sym ship))
+      (call-hooks :failed :install-mount {:ship ship
+                                          :mount mount}))))
+
+(defn remove-mount! [ship mount]
+  (trace "About to remove mount" (sym mount) "from ship" (sym ship))
+  (call-hooks :before :remove-mount {:ship ship
+                                     :mount mount})
+  (if-let [{:keys [agent mounts cargo transaction] :as response}
+           (q :ship-remove-mount {:shipSymbol (sym ship)
+                                  :symbol (sym mount)})]
+    (do
+      ;; diligence
+      (when-let [unused (not-empty (dissoc response :agent :mounts :cargo :transaction))]
+        (warn "UNUSED BY remove-mount!" (prn-str unused)))
+      ;; tracing
+      (debug "Removed mount" (sym mount) "from ship" (sym ship))
+      ;; update state
+      (swap! state update-in [:ships (keyword (sym ship))]
+             util/deep-merge {:mounts mounts :cargo cargo})
+      (swap! state update :agent
+             util/deep-merge agent)
+      (swap! state update :transaction conj transaction)
+      ;; callbacks
+      (call-hooks :after :remove-mount {:agent agent
+                                        :mounts mounts
+                                        :cargo cargo
+                                        :transaction transaction
+                                        :response response})
+      ;; return
+      {:ship (get-in @state [:ships (keywords (sym ship))])
+       :response response})
+    (do
+      (debug "Failed to remove mount" (sym mount) "from ship" (sym ship))
+      (call-hooks :failed :remove-mount {:ship ship
+                                         :mount mount}))))
 
 "Loaded api."
