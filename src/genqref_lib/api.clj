@@ -1445,7 +1445,7 @@
                                          :transaction transaction
                                          :response response})
       ;; return
-      {:ship (get-in @state [:ships (keywords (sym ship))])
+      {:ship (get-in @state [:ships (keyword (sym ship))])
        :response response})
     (do
       (debug "Failed to install mount" (sym mount) "into ship" (sym ship))
@@ -1478,7 +1478,7 @@
                                         :transaction transaction
                                         :response response})
       ;; return
-      {:ship (get-in @state [:ships (keywords (sym ship))])
+      {:ship (get-in @state [:ships (keyword (sym ship))])
        :response response})
     (do
       (debug "Failed to remove mount" (sym mount) "from ship" (sym ship))
