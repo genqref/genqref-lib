@@ -18,11 +18,11 @@ cache persisted through a [[https://github.com/jimpil/duratom][duratom]].
 
 *Leiningen/Boot*
 
-~[com.github.genqref/genqref-lib "0.1.0"]~
+~[com.github.genqref/genqref-lib "0.5.0"]~
 
 *Clojure CLI/deps.edn*
 
-~com.github.genqref/genqref-lib {:mvn/version "0.1.0"}~
+~com.github.genqref/genqref-lib {:mvn/version "0.5.0"}~
 
 * Introduction
 

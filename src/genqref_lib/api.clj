@@ -1,26 +1,44 @@
+;; * Namespace
+
 (ns genqref-lib.api
   "- https://api.spacetraders.io/v2
    - https://docs.spacetraders.io/
    - https://spacetraders.stoplight.io/docs/spacetraders/
-   - https://twitter.com/SpaceTradersAPI"
+   - https://twitter.com/SpaceTradersAPI
+   - https://tradiverse.github.io/agent-stats/
+   Hourly resets!
+   - https://st-universe.se1.serial-experiments.com/v2/"
   (:require [clojure.string :as str]
             [clojure.set :as set]
             [martian.core :as martian]
             [martian.httpkit :as martian-http]
             [duratom.core :refer [duratom]]
             [cheshire.core :as json]
-            [taoensso.timbre :as timbre :refer [trace debug info warn error]]
+            [taoensso.timbre :as timbre :refer [trace debug info warn error fatal]]
             [org.httpkit.client :as http]
             [genqref-lib.time :as t]
             [genqref-lib.util :as util :refer [sym]]
+            [genqref-lib.algo.tsp :as tsp]
             [genqref-lib.scheduler :refer [schedule!]]
             [slingshot.slingshot :refer [try+ throw+]]
             [throttler.core :refer [throttle-fn]])
   (:gen-class))
 
-;;; public api
+;; * Decalarations
+
+(declare dock!)
+(declare orbit!)
+(declare refuel!)
+(declare state)
+(declare refresh!)
+
+(declare ^:dynamic *reset-fn*)
 
 (def swagger-spec "spacetraders.v2.json")
+;; TODO: make it work with the bundled spec
+;; (def swagger-spec (io/resource "spacetraders.v2.json"))
+
+;; * Public API
 
 (def public-api (martian-http/bootstrap-openapi swagger-spec))
 
@@ -41,8 +59,8 @@
 
 (defn token
   "Returns the token for the current run."
-  []
-  (get @tokens (:resetDate (status))))
+  [callsign]
+  (get @tokens [callsign (:resetDate (status))]))
 
 #_(token)
 
@@ -54,29 +72,33 @@
   already is a token for the current run. On success this will reset
   state (the local cache) and populate it with the data received from
   registration."
-  (if (token)
-    (warn "There is already a token for the current run. Abort.")
-    (when-let [{:keys [token agent contract faction ship] :as response}
-               (:data (:body @(martian/response-for public-api :register options)))]
-      ;; diligence
-      (when-let [unused (not-empty (dissoc response :token :agent :contract :faction :ship))]
-        (warn "UNUSED BY register!" (prn-str unused)))
-      (let [{:keys [resetDate]} (status)]
-        (swap! tokens assoc resetDate token)
-        (reset! state {:resetDate resetDate
-                       :agent agent
-                       :contracts {(keyword (:id contract)) contract}
-                       :factions {(keyword (sym faction)) faction}
-                       :ships {(keyword (sym ship)) ship}})
-        (init!)
-        (info "Successfully registered and reinitialized.")
-        response))))
+  (let [callsign (:symbol options)]
+    (if (token callsign)
+      (warn "Abort. There is already a token for callsign" callsign "(for this reset)")
+      (when-let [{:keys [token agent contract faction ship] :as response}
+                 (:data (:body @(martian/response-for public-api :register options)))]
+        ;; diligence
+        (when-let [unused (not-empty (dissoc response :token :agent :contract :faction :ship))]
+          (warn "UNUSED BY register!" (prn-str unused)))
+        ;; update tokens and state
+        (let [{:keys [resetDate]} (status)]
+          (swap! tokens assoc [callsign resetDate] token)
+          (reset! state {:token-key [callsign resetDate]
+                         :agent agent
+                         :contracts {(keyword (:id contract)) contract}
+                         :factions {(keyword (sym faction)) faction}
+                         :ships {(keyword (sym ship)) ship}})
+          ;; initialize api
+          (init! callsign)
+          (info "Successfully registered and reinitialized.")
+          response)))))
 
 #_(register! {:faction "COSMIC"
               :symbol "CALLSIGN"
               :email "EMAIL"})
 
-;;; main api setup
+;; * Main API Setup
+;; ** Authorized API
 
 (defn- add-authentication-header [token]
   {:name ::add-authentication-header
@@ -84,6 +106,7 @@
             (assoc-in ctx [:request :headers "Authorization"] (str "Bearer " token)))})
 
 (defn api [token]
+  (debug "initializing api")
   (martian-http/bootstrap-openapi swagger-spec
                                   {:interceptors (concat martian/default-interceptors
                                                          [(add-authentication-header token)]
@@ -94,24 +117,20 @@
 (def ^:dynamic *reset-fn*)
 
 (defn init!
-  ([] (init! nil))
-  ([reset-fn]
-   (alter-var-root #'*api* (constantly (api (token))))
+  ([callsign] (init! callsign nil))
+  ([callsign reset-fn]
+   (println (-> *api* :handlers count))
+   (alter-var-root #'*api* (constantly (api (token callsign))))
+   (println (-> *api* :handlers count))
    (alter-var-root #'*reset-fn* (constantly reset-fn))
    "done"))
 
 #_(init!)
 
-;;; error handling
+;; ** Error Handling
 
 ;; NOTE: the whole error handling is a mess and must be refactored
-;; TODO: use a interceptor pattern for error recovery and active rate
-;; limiting on client side
-
-(declare dock!)
-(declare orbit!)
-(declare refuel!)
-(declare state)
+;; TODO: use a interceptor pattern (sieppari) for error recovery
 
 ;; TODO: move to util, maybe rename to waypoint
 (defn parse-waypoint [signature]
@@ -144,16 +163,42 @@
            (partial remove #(-> % :signature (= signature))))
     (info "Removed invalid survey" signature)))
 
+#_(deref (martian/response-for *api* :get-my-agent))
+
+(defn safe-deref [x]
+  (try
+    (deref x)
+    (catch Exception e
+      x)))
+
 ;; https://docs.spacetraders.io/api-guide/response-errors
 ;; TODO: handle network issues with retrying
 ;; TODO: catch registration required after reset
 ;; TODO: rename q, q* and q** to request, request* and request**
 (defn- q* [args]
   (let [result
-        (let [response (deref (apply (partial martian/response-for *api*) args))]
+        (let [response (safe-deref (apply (partial martian/response-for *api*) args))]
           (cond
+            ;; all good
             (-> response :status #{200 201 204})
-            (-> response :body :data)
+            (if-let [data (-> response :body :data)]
+              ;; in out app stack the data is autmatically parsed
+              data
+              ;; in out test stack it needs to be parse here
+              (-> response :body (json/parse-string keyword) :data))
+
+            ;; This will happen after a reset. The current token will
+            ;; be invalid. That is what the *reset-fn* is for.
+            (-> response :status #{401})
+            (let [{:keys [message code data]} (-> response :body :error)]
+              (error "Auth Error" code message)
+              (if (fn? *reset-fn*)
+                (do
+                  (info "To recover from this error we will now call the registered reset function.")
+                  (*reset-fn*))
+                (do
+                  (fatal "No reset function to recover from this error. Best to shut down at this point.")
+                  (System/exit 1))))
 
             (-> response :status #{400 409})
             (let [{{:keys [code message]} :error} (-> response :body)]
@@ -232,34 +277,45 @@
                 4224 (remove-survey message)
                 ;; default
                 (error "Unknown error:" message)))
-            ;; exceeded the rate limit
+
+            ;; Exceeded the rate limit. This should never happen as
+            ;; we're activley throttling request toi what's allowed.
             (-> response :status #{429})
-            (let [{:keys [error]} (-> response :body) ;; (json/parse-string body true)
+            (let [{:keys [error]} (-> response :body)
                   timeout (-> error :data :retryAfter)]
-              ;; (prn error)
-              ;; (info (-> error :data))
-              ;; (info (-> error :data :retryAfter))
-              (info ">>> We're going too fast (429), timeout for" timeout "seconds. <<<")
+              (warn ">>> We're going too fast (429), timeout for" timeout "seconds. <<<")
               {:retry timeout})
-            (-> response :status #{502})
+
             ;; The server encountered a temporary error and could not
             ;; complete your request. Please try again in 30 seconds.
+            (-> response :status #{502})
             (do
-              (info ">>> Encountered a server error (502). Retry in 30s, as advised. <<<")
-              {:retry 30})))]
+              (warn ">>> Encountered a server error (502). Retry in 30s, as advised. <<<")
+              {:retry 30})
+
+            ;; This is serious. Probably a deployment. If so we'll get
+            ;; a 401, after the 503 is gone, see above.
+            (-> response :status #{503})
+            (do
+              (warn ">>> Service unavailable (503). Propbably a deployment. Retry in 2min. <<<")
+              {:retry 120})))]
     (if (contains? result :retry)
       (do
         (Thread/sleep (* 1000 (or (:retry result) 5)))
         (recur args))
       result)))
 
+;; ** Throttling
+
 ;; NOTE: bursts in this lib work different than for st-api
 (def q** (throttle-fn q* 2 :second 1))
+
+;; ** Convenience
 
 (defn q [& args]
   (q** args))
 
-;;; state (local cache)
+;; * State (local cache)
 
 (def state (duratom :local-file
                     :file-path "state.json"
@@ -268,7 +324,7 @@
                     :rw {:read (comp #(json/parse-string % true) slurp)
                          :write #(spit %1 (json/generate-string %2))}))
 
-;;; util
+;; * Util
 
 (defn xy [{:keys [x y]}]
   (when (and x y)
@@ -290,7 +346,54 @@
 (defn min-sec [datetime]
   (last (re-find #"(\d\d:\d\d)\." datetime)))
 
-;;; operations on state
+(defn remaining-capacity
+  "Given a SHIP return its remaining cargo capacity"
+  [{{:keys [capacity units]} :cargo :as ship}]
+  (- capacity units))
+
+(defn remaining-units
+  "Given a CONTRACT return the remaining units"
+  [contract]
+  (let [{:keys [unitsRequired unitsFulfilled]} (-> contract :terms :deliver first)]
+    (- unitsRequired unitsFulfilled)))
+
+(defn units-in-cargo
+  "For a SHIP return the units of given GOOD in its inventory"
+  [ship good]
+  (->> ship :cargo :inventory (filter #(-> % :symbol (= good))) first :units))
+
+;; * Operations On State
+
+(defn markets-selling
+  ([good]
+   (markets-selling good (vals (:markets @state))))
+  ([good markets-or-waypoints]
+   (->> markets-or-waypoints
+        ;; map to markets
+        (map #(get-in @state [:markets (keyword (sym %))]))
+        ;; remove the entries that either have no market or we're missing market data for
+        (remove nil?)
+        ;; remove markets that don't sell the good
+        (filter (comp #(contains? % good) set (partial map :symbol) :tradeGoods))
+        ;; sort by purchase price, cheapest first
+        (sort-by (comp :purchasePrice first (partial filter #(-> % :symbol (= good))) :tradeGoods)))))
+
+;; NOTE: multiple arities solely for testability (which is likely an anti-pattern)
+(defn- lookup-and-merge-coordinates
+  ([market]
+   (lookup-and-merge-coordinates market (:waypoints @state)))
+  ([market waypoints]
+   (as-> (keyword (sym market)) $
+     (get waypoints $)
+     (select-keys $ [:x :y])
+     (merge market $))))
+
+;; TODO: take price into account
+;; TODO: don't assume everything is in one system
+(defn best-market-for [good waypoint]
+  (->> (markets-selling good)
+       (map lookup-and-merge-coordinates)
+       (tsp/closest waypoint)))
 
 (defn system-where-ship [ship]
   (-> @state :systems (get (keyword (-> ship :nav :systemSymbol)))))
@@ -349,7 +452,7 @@
 
 (defn active-contract []
   (let [contracts (active-contracts)]
-    (assert (= 1 (count contracts)) "Once upon the time you could only have one contract.")
+    (assert (>= 1 (count contracts)) "Once upon the time you could only have one contract.")
     (first contracts)))
 
 #_(active-contracts)
@@ -368,7 +471,15 @@
          (conj [:markets])
          (get-in @state))))
 
-;;; hooks
+#_(def ship (refresh! :ship "GENQREF-1"))
+#_(def waypoint (-> ship :nav :waypointSymbol))
+#_(closest-market-to-waypoint waypoint)
+
+(defn jumpgate-where-ship! [ship]
+  (let [{:keys [waypointSymbol]} (:nav ship)]
+    (get-in @state [:jumpgates (keyword waypointSymbol)] (refresh! :jumpgate waypointSymbol))))
+
+;; * Hooks
 
 (defonce ^:private hooks (atom {}))
 
@@ -409,7 +520,7 @@
 
 #_(call-hooks :after :jump "GENQREF-1" :asdf)
 
-;;; GET (refresh, query the api and populate state)
+;; * GET (refresh, query the api and populate state)
 
 ;; TODO: rename refresh and refresh! to `query` and `query!`
 
@@ -417,7 +528,25 @@
 
 ;; TODO: pass map as 3rd param to call-hooks in refresh fns
 
-;;;; factions
+;; ** Agents
+
+(defmethod refresh :agents [_ _]
+  (trace "Query agents")
+  (let [agents (q :get-agents)]
+    (swap! state update :agents
+           util/deep-merge (util/index-by (comp keyword :symbol) agents))
+    (call-hooks :updated :agents agents)
+    agents))
+
+(defmethod refresh :agent [_ agent]
+  (trace "Query agent" (sym agent))
+  (let [agent (q :get-agent {:agentSymbol (sym agent)})]
+    (swap! state update-in [:agents (keyword (sym agent))]
+           util/deep-merge agent)
+    (call-hooks :updated :agent agent)
+    agent))
+
+;; ** Factions
 
 (defmethod refresh :factions [_ _]
   (trace "Query factions")
@@ -435,15 +564,23 @@
     (call-hooks :updated :faction faction)
     faction))
 
-;;;; fleet
+;; ** Fleet
 
 (defmethod refresh :ships [_ _]
   (trace "Query ships")
-  (let [ships (q :get-my-ships)]
+  (let [limit 20
+        ships (loop [result [] page 1]
+                (let [batch (q :get-my-ships {:limit limit})
+                      result (concat result batch)]
+                  (if (< (count batch) limit)
+                    result
+                    (recur result (inc page)))))]
     (swap! state update :ships
            util/deep-merge (util/index-by (comp keyword :symbol) ships))
     (call-hooks :updated :ships ships)
     ships))
+
+#_(count (refresh! :ships))
 
 (defmethod refresh :ship [_ ship]
   (trace "Query ship" (sym ship))
@@ -481,13 +618,13 @@
 
 (defmethod refresh :mounts [_ ship]
   (trace "Query mounts for ship" (sym ship))
-  (let [mounts (q :get-ship-mounts {:shipSymbol (sym ship)})]
+  (let [mounts (q :get-mounts {:shipSymbol (sym ship)})]
     (swap! state update-in [:ships (keyword (sym ship)) :mounts]
            util/deep-merge mounts)
     (call-hooks :updated :mounts ship mounts)
     mounts))
 
-;;;; contracts
+;; ** Contracts
 
 (defmethod refresh :contracts [_ _]
   (trace "Query contracts")
@@ -505,7 +642,7 @@
     (call-hooks :updated :contract contract)
     contract))
 
-;;;; systems
+;; ** Systems
 
 (defmethod refresh :systems [_ _]
   (trace "Query systems")
@@ -575,17 +712,19 @@
     (call-hooks :updated :jumpgate waypoint jumpgate)
     jumpgate))
 
-;;;; agents
+;; ** Agents
 
 (defmethod refresh :agent [_ _]
   (trace "Query agent")
   (let [agent (q :get-my-agent)]
     (swap! state update :agent
-           util/deep-merge (q :get-my-agent))
+           util/deep-merge agent)
     (call-hooks :updated :agent agent)
     agent))
 
-;;; GET api
+#_(refresh! :agent)
+
+;; * GET api
 
 (defn refresh!
   ([entity] (refresh! entity nil))
@@ -594,12 +733,16 @@
 
 #_(def ship (refresh! :ship ship))
 
-;;; POST/PATCH (actions)
+;; * POST/PATCH (actions)
 
 ;; TODO: don't just lazily return the response, instead return updated
 ;; entities like in `dock!`
 
-;;;; fleet
+;; TODO: the after callback should receive the same values as the return
+
+;; TODO: mulitple swaps on state should be combined into one
+
+;; ** Fleet
 
 (defn purchase-ship! [shipyard ship-type]
   (trace "About to purchase" ship-type "at" (sym shipyard))
@@ -982,23 +1125,24 @@
     (trace "Ship" (sym ship) "is about to set flight mode to" mode)
     (call-hooks :before :flight-mode {:ship ship
                                       :mode mode})
-    (if-let [response
+    ;; NOTE: things are different here as the response is the
+    ;; updated nav (e.g. the usual diligence doesn't make sense)
+    (if-let [nav
              (q :patch-ship-nav {:shipSymbol (sym ship)
                                  :flightMode mode})]
       (do
-        ;; diligence
-        (when-let [unused (not-empty (dissoc response :x))]
-          (warn "UNUSED BY flight-mode!" (prn-str unused)))
         ;; tracing
         (debug "Ship" (sym ship) "set flight mode to" mode)
         ;; update state
-        ;; this assocs a scalar so assoc is fine
-        (swap! state assoc-in [:ships (keyword (sym ship)) :nav :mode] mode)
+        (swap! state update-in [:ships (keyword (sym ship)) :nav]
+               util/deep-merge nav)
         ;; callbacks
         (call-hooks :after :flight-mode {:ship ship
                                          :mode mode})
         ;; return
-        response)
+        {:nav nav
+         ;; for convenience we're also returning the updated ship
+         :ship (update ship :nav util/deep-merge nav)})
       (do
         (debug "Ship" (sym ship) "failed to set flight mode to" mode)
         (call-hooks :failed :flight-mode {:ship ship
@@ -1239,22 +1383,29 @@
   (call-hooks :before :purchase-cargo {:ship ship
                                        :trade trade
                                        :units units})
-  (if-let [{:keys [transaction cargo] :as response}
+  (if-let [{:keys [cargo agent transaction] :as response}
            (q :purchase-cargo {:shipSymbol (sym ship)
                                :symbol trade
                                :units units})]
     (do
       ;; diligence
-      (when-let [unused (not-empty (dissoc response :x))]
+      (when-let [unused (not-empty (dissoc response :agent :cargo :transaction))]
         (warn "UNUSED BY purchase-cargo!" (prn-str unused)))
       ;; tracing
       (debug "Ship" (sym ship) "purchased" units "units of" trade "for" (:totalPrice transaction))
       ;; update state
-      ;; TODO
+      (swap! state update :agent
+             util/deep-merge agent)
+      (swap! state update-in [:ships (keyword (sym ship)) :cargo]
+             util/deep-merge cargo)
+      (swap! state update :transactions conj transaction)
       ;; callbacks
       (call-hooks :after :purchase-cargo {:ship ship
                                           :trade trade
                                           :units units
+                                          :agent agent
+                                          :cargo cargo
+                                          :transaction transaction
                                           :response response})
       ;; return
       response)
@@ -1302,6 +1453,8 @@
                                      :trade trade
                                      :units units}))))
 
+;; ** Contracts
+
 (defn negotiate-contract! [ship]
   (trace "Ship" (sym ship) "is about to negotiate a contract")
   (call-hooks :before :negotiate-contract {:ship ship})
@@ -1326,8 +1479,6 @@
       (debug "Ship" (sym ship) "failed to negotiate contract")
       (call-hooks :failed :negotiate-contract {:ship ship}))))
 
-;;;; contracts
-
 (defn deliver-contract! [ship contract trade units]
   (let [id (or (:id contract) contract)]
     (trace "Ship" (sym ship) "delivers" units "units of" trade "on contract" id)
@@ -1335,24 +1486,28 @@
                                            :contract contract
                                            :trade trade
                                            :units units})
-    (if-let [response
+    (if-let [{:keys [contract cargo] :as response}
              (q :deliver-contract {:contractId id
                                    :shipSymbol (sym ship)
                                    :tradeSymbol trade
                                    :units units})]
       (do
         ;; diligence
-        (when-let [unused (not-empty (dissoc response :x))]
+        (when-let [unused (not-empty (dissoc response :contract :cargo))]
           (warn "UNUSED BY deliver-contract!" (prn-str unused)))
         ;; tracing
         (debug "Ship" (sym ship) "delivered" units "units of" trade "on contract" id)
         ;; update state
-        ;; TODO
+        (swap! state update-in [:contracts (keyword (:id contract))]
+               util/deep-merge contract)
+        (swap! state update-in [:ships (keyword (sym ship)) :cargo]
+               util/deep-merge cargo)
         ;; callbacks
         (call-hooks :after :deliver-contract {:ship ship
                                               :contract contract
                                               :trade trade
                                               :units units
+                                              :cargo cargo
                                               :response response})
         ;; return
         response)
@@ -1374,6 +1529,7 @@
         (when-let [unused (not-empty (dissoc response :contract :agent))]
           (warn "UNUSED BY accept-contract!" (prn-str unused)))
         ;; tracing
+        ;; TODO: output details
         (debug "Accepted contract" id)
         ;; update state
         (swap! state update-in [:contracts (keyword id)]
@@ -1419,13 +1575,15 @@
 
 #_(fulfill-contract! (-> @state :contracts vals first))
 
+;; ** Mounts
+
 (defn install-mount! [ship mount]
   (trace "About to install mount" (sym mount) "into ship" (sym ship))
   (call-hooks :before :install-mount {:ship ship
                                       :mount mount})
   (if-let [{:keys [agent mounts cargo transaction] :as response}
-           (q :ship-install-mount {:shipSymbol (sym ship)
-                                   :symbol (sym mount)})]
+           (q :install-mount {:shipSymbol (sym ship)
+                              :symbol (sym mount)})]
     (do
       ;; diligence
       (when-let [unused (not-empty (dissoc response :agent :mounts :cargo :transaction))]
@@ -1457,8 +1615,8 @@
   (call-hooks :before :remove-mount {:ship ship
                                      :mount mount})
   (if-let [{:keys [agent mounts cargo transaction] :as response}
-           (q :ship-remove-mount {:shipSymbol (sym ship)
-                                  :symbol (sym mount)})]
+           (q :remove-mount {:shipSymbol (sym ship)
+                             :symbol (sym mount)})]
     (do
       ;; diligence
       (when-let [unused (not-empty (dissoc response :agent :mounts :cargo :transaction))]
@@ -1484,5 +1642,18 @@
       (debug "Failed to remove mount" (sym mount) "from ship" (sym ship))
       (call-hooks :failed :remove-mount {:ship ship
                                          :mount mount}))))
+
+;;; Convenience
+
+(defn sell-all-cargo!
+  ([ship] (sell-all-cargo! ship {}))
+  ([ship {:keys [except] :or {except []}}]
+   (debug "Ship" (sym ship) "visiting market")
+   (let [ship (refresh! :ship ship)
+         market (refresh! :market {:symbol (-> ship :nav :waypointSymbol)})
+         inv (->> ship :cargo :inventory)
+         inv² (remove #(->> % :symbol (contains? (set except))) inv)]
+     (doseq [{:keys [symbol units] :as item} inv²]
+       (sell-cargo! ship symbol units)))))
 
 "Loaded api."

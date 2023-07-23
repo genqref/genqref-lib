@@ -3,6 +3,9 @@
   approximation."
   (:require [genqref-lib.util :as util]))
 
+(defn closest [loc locs]
+  (->> locs (sort-by (partial util/distance loc)) first))
+
 (defn poor-mans-tsp
   "Given a SHIP and WAYPOINTS, approximate a tsp route."
   [waypoints start]
@@ -11,7 +14,7 @@
          route [start]]
     (if (empty? remaining)
       route
-      (let [next (->> remaining (sort-by (partial util/distance current)) first)]
+      (let [next (closest current remaining)]
         (recur next
                (remove #{next} remaining)
                (conj route next))))))
