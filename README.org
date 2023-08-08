@@ -62,7 +62,7 @@ cache persisted through a [[https://github.com/jimpil/duratom][duratom]].
 
   (def waypoint (refresh! :waypoint waypoint))
 
-  ;; This will of course update `@state`, but fro convenience it also
+  ;; This will of course update `@state`, but for convenience it also
   ;; returns the payload of the request. There are a couple more points
   ;; to note here: Outdated or missing information can be "refreshed" by
   ;; calling `refresh!`. All functions in genqref-lib that end in an

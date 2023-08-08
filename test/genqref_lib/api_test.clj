@@ -61,23 +61,23 @@
 ;;        slurp
 ;;        edn/read-string))))
 
-(defn record-api []
-  (martian-http/bootstrap-openapi
-   "spacetraders.v2.json" ;; use a bundled resource instead
-   {:interceptors
-    (-> [(#'api/add-authentication-header (slurp "test-token.txt"))]
-        (concat martian-http/default-interceptors)
-        (inject (vcr/playback vcr-opts)
-                :before (:name martian-http/perform-request)))}))
-
-(defn playback-api []
-  (martian-http/bootstrap-openapi
-   "spacetraders.v2.json" ;; use a bundled resource instead
-   {:interceptors
-    (-> [(#'api/add-authentication-header (slurp "test-token.txt"))]
-        (concat martian-http/default-interceptors)
-        (inject (vcr/playback vcr-opts)
-                :replace (:name martian-http/perform-request)))}))
+;; (defn record-api []
+;;   (martian-http/bootstrap-openapi
+;;    "spacetraders.v2.json" ;; use a bundled resource instead
+;;    {:interceptors
+;;     (-> [(#'api/add-authentication-header (slurp "test-token.txt"))]
+;;         (concat martian-http/default-interceptors)
+;;         (inject (vcr/playback vcr-opts)
+;;                 :before (:name martian-http/perform-request)))}))
+;;
+;; (defn playback-api []
+;;   (martian-http/bootstrap-openapi
+;;    "spacetraders.v2.json" ;; use a bundled resource instead
+;;    {:interceptors
+;;     (-> [(#'api/add-authentication-header (slurp "test-token.txt"))]
+;;         (concat martian-http/default-interceptors)
+;;         (inject (vcr/playback vcr-opts)
+;;                 :replace (:name martian-http/perform-request)))}))
 
 (defn test-api []
   (martian-http/bootstrap-openapi
@@ -100,8 +100,10 @@
                       (binding [*api* (test-api)]
                         (f))))
 
-(binding [*api* (test-api)]
-  (refresh! :ships))
+(comment
+  (binding [*api* (test-api)]
+    (refresh! :ships))
+  )
 
 ;; (defn playback [{:keys [on-missing-response] :as opts}]
 ;;   (let [counters (atom {})]
@@ -137,7 +139,18 @@
        doall)
   (println "--------------------------------------------------------------------------------"))
 
-(deftest get-ships-test
+;; (deftest refresh!-agents-test
+;;   (is (= #{}
+;;          (-> (refresh! :agents)
+;;              first
+;;              keys
+;;              set))))
+
+;; (deftest refresh!-agent-test
+;; (deftest refresh!-factions-test
+;; (deftest refresh!-faction-test
+
+(deftest refresh!-ships-test
   (is (= #{:reactor
            :cargo
            :frame
@@ -153,3 +166,61 @@
              first
              keys
              set))))
+
+
+;; (deftest refresh!-ship-test
+;; (deftest refresh!-cargo-test
+;; (deftest refresh!-cooldown-test
+;; (deftest refresh!-nav-test
+;; (deftest refresh!-mounts-test
+;; (deftest refresh!-contracts-test
+;; (deftest refresh!-contract-test
+;; (deftest refresh!-systems-test
+;; (deftest refresh!-system-test
+;; (deftest refresh!-waypoints-test
+;; (deftest refresh!-waypoint-test
+;; (deftest refresh!-market-test
+;; (deftest refresh!-shipyard-test
+;; (deftest refresh!-jumpgate-test
+;; (deftest refresh!-my-agent-test
+
+;;(deftest purchase-ship!-test
+;;  (let [{:keys [agent ship transaction] :as response} (purchase-ship! ...
+
+(deftest orbit!-test
+  (let [ship (-> @state :ships vals first)
+        {:keys [ship] :as response} (orbit! ship)]
+    (is (= #{:ship :nav} (-> response keys set)))
+    (is (= "IN_ORBIT" (-> ship :nav :status)))))
+
+;; (deftest refine!-test
+;; (deftest chart!-test
+
+(deftest dock!-test
+  (let [ship (-> @state :ships vals first)
+        {:keys [ship] :as response} (dock! ship)]
+    (is (= #{:ship :nav :waypoint} (-> response keys set)))
+    (is (= "DOCKED" (-> ship :nav :status)))))
+
+;; (deftest survey!-test
+;; (deftest extract!-test
+;; (deftest jettison!-test
+;; (deftest jump!-test
+;; (deftest navigate!-test
+;; (deftest flight-mode!-test
+;; (deftest warp!-test
+;; (deftest sell-cargo!-test
+;; (deftest scan-systems!-test
+;; (deftest scan-waypoints!-test
+;; (deftest scan-ships!-test
+;; (deftest refuel!-test
+;; (deftest purchase-cargo!-test
+;; (deftest transfer!-test
+;; (deftest negotiate-contract!-test
+;; (deftest deliver-contract!-test
+;; (deftest accept-contract!-test
+;; (deftest fulfill-contract!-test
+;; (deftest install-mount!-test
+;; (deftest remove-mount!-test
+
+;; (deftest sell-all-cargo!-test

@@ -119,9 +119,8 @@
 (defn init!
   ([callsign] (init! callsign nil))
   ([callsign reset-fn]
-   (println (-> *api* :handlers count))
    (alter-var-root #'*api* (constantly (api (token callsign))))
-   (println (-> *api* :handlers count))
+   (debug "initialized" (-> *api* :handlers count) "handlers")
    (alter-var-root #'*reset-fn* (constantly reset-fn))
    "done"))
 
@@ -310,10 +309,14 @@
 ;; NOTE: bursts in this lib work different than for st-api
 (def q** (throttle-fn q* 2 :second 1))
 
-;; ** Convenience
+;; ** Convenience and logging
 
 (defn q [& args]
-  (q** args))
+  (let [now #(System/currentTimeMillis)
+        t0 (now)
+        result (q** args)]
+    (debug "REQ" (first args) (format "%.2fs" (float (/ (- (now) t0) 1000))))
+    result))
 
 ;; * State (local cache)
 
@@ -523,10 +526,17 @@
 ;; * GET (refresh, query the api and populate state)
 
 ;; TODO: rename refresh and refresh! to `query` and `query!`
+;; TODO: maybe use `refresh` for local cache and `query` for api
 
 (defmulti refresh (fn [entity _] entity))
 
 ;; TODO: pass map as 3rd param to call-hooks in refresh fns
+
+(defmulti query (fn [entity _] entity))
+
+(defmethod query :ship [_ ship]
+  (trace "Refresh ship")
+  (-> @state :ships (get (keyword (sym ship)))))
 
 ;; ** Agents
 
@@ -570,7 +580,7 @@
   (trace "Query ships")
   (let [limit 20
         ships (loop [result [] page 1]
-                (let [batch (q :get-my-ships {:limit limit})
+                (let [batch (q :get-my-ships {:limit limit :page page})
                       result (concat result batch)]
                   (if (< (count batch) limit)
                     result
@@ -619,8 +629,8 @@
 (defmethod refresh :mounts [_ ship]
   (trace "Query mounts for ship" (sym ship))
   (let [mounts (q :get-mounts {:shipSymbol (sym ship)})]
-    (swap! state update-in [:ships (keyword (sym ship)) :mounts]
-           util/deep-merge mounts)
+    (swap! state update-in [:ships (keyword (sym ship))]
+           util/deep-merge {:mounts mounts})
     (call-hooks :updated :mounts ship mounts)
     mounts))
 
@@ -761,7 +771,7 @@
       (swap! state #(-> %
                         (update :agent util/deep-merge agent)
                         ;; this is a new ship, so assoc-in is ok in this case
-                        (update :ships assoc-in [:ships (keyword (sym ship))] ship)
+                        (update :ships assoc (keyword (sym ship)) ship)
                         ;; TODO: index transaction too, for mergability
                         (update :transactions conj transaction)))
       ;; callbacks
@@ -794,7 +804,8 @@
       (call-hooks :after :orbit {:ship ship
                                  :nav nav})
       ;;return
-      response)
+      {:nav nav
+       :ship (-> @state :ships (get (keyword (sym ship))))})
     (do
       (debug "Ship" (sym ship) "failed to move to orbit")
       (call-hooks :failed :orbit {:ship ship}))))
@@ -888,13 +899,14 @@
       ;; tracing
       (debug "Ship" (sym ship) "docked at" (:waypointSymbol nav))
       ;; update state
-      (swap! state update-in [:surveys (keyword (sym ship)) :nav]
+      (swap! state update-in [:ships (keyword (sym ship)) :nav]
              util/deep-merge nav)
       ;; callbacks
       (call-hooks :after :dock {:ship ship
                                 :nav nav})
       ;; return
-      {:ship (get-in @state [:ships (keyword (sym ship))])
+      {:nav nav
+       :ship (get-in @state [:ships (keyword (sym ship))])
        :waypoint (get-in @state [:waypoints (keyword (:waypointSymbol nav))])})
     (do
       (debug "Ship" (sym ship) "failed to dock")
@@ -932,7 +944,9 @@
                                                        :options options
                                                        :surveys surveys
                                                        :cooldown cooldown})
-                       (when on-cooldown (on-cooldown))))
+                       (if on-cooldown
+                         (on-cooldown)
+                         (warn "WARNING: SHIP" (sym ship) "DID NOT SPECIFIY ACTION AFTER SURVEY"))))
          (error "Schedule failed no expiration in" (prn-str response)))
        ;; callbacks
        (call-hooks :after :survey {:ship ship
@@ -953,6 +967,8 @@
   ([ship] (extract! ship {}))
   ([ship {:keys [on-cooldown] :as options}]
    (trace "Ship" (sym ship) "is about to extract resources")
+   (when-not on-cooldown
+     (warn "WARNING: SHIP" (sym ship) "EXTRACTS WITHOUT AFTER COOLDOWN ACTION"))
    (call-hooks :before :extract {:ship ship
                                  :options options})
    (if-let [{:keys [extraction cooldown cargo] :as response}
@@ -981,7 +997,9 @@
                                                         :extraction extraction
                                                         :cooldown cooldown
                                                         :cargo cargo})
-                       (when on-cooldown (on-cooldown))))
+                       (if on-cooldown
+                         (on-cooldown)
+                         (warn "WARNING: SHIP" (sym ship) "DID NOT SPECIFIY ACTION AFTER EXTRACT"))))
          (error "Schedule failed. No expiration in" (prn-str response)))
        ;; callbacks
        (call-hooks :after :extract {:ship ship
@@ -1368,7 +1386,10 @@
              util/deep-merge fuel)
       ;; TODO: store transaction somewhere
       ;; callbacks
-      (call-hooks :after :refuel {:ship ship
+      (call-hooks :after :refuel {:ship (get-in @state [:ships (keyword (sym ship))])
+                                  :agent agent
+                                  :fuel fuel
+                                  :transaction transaction
                                   :response response})
       ;; return
       response)
