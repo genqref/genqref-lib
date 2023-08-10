@@ -31,6 +31,7 @@
 (declare refuel!)
 (declare state)
 (declare refresh!)
+(declare query!)
 
 (declare ^:dynamic *reset-fn*)
 
@@ -523,24 +524,17 @@
 
 #_(call-hooks :after :jump "GENQREF-1" :asdf)
 
-;; * GET (refresh, query the api and populate state)
+;;; GET (refresh, query the api and populate state)
 
-;; TODO: rename refresh and refresh! to `query` and `query!`
-;; TODO: maybe use `refresh` for local cache and `query` for api
-
-(defmulti refresh (fn [entity _] entity))
-
-;; TODO: pass map as 3rd param to call-hooks in refresh fns
+;;; `query!` queries the api (bad)
 
 (defmulti query (fn [entity _] entity))
 
-(defmethod query :ship [_ ship]
-  (trace "Refresh ship")
-  (-> @state :ships (get (keyword (sym ship)))))
+;; TODO: pass map as 3rd param to call-hooks in refresh fns
 
 ;; ** Agents
 
-(defmethod refresh :agents [_ _]
+(defmethod query :agents [_ _]
   (trace "Query agents")
   (let [agents (q :get-agents)]
     (swap! state update :agents
@@ -548,7 +542,7 @@
     (call-hooks :updated :agents agents)
     agents))
 
-(defmethod refresh :agent [_ agent]
+(defmethod query :agent [_ agent]
   (trace "Query agent" (sym agent))
   (let [agent (q :get-agent {:agentSymbol (sym agent)})]
     (swap! state update-in [:agents (keyword (sym agent))]
@@ -558,7 +552,7 @@
 
 ;; ** Factions
 
-(defmethod refresh :factions [_ _]
+(defmethod query :factions [_ _]
   (trace "Query factions")
   (let [factions (q :get-factions)]
     (swap! state update :factions
@@ -566,7 +560,7 @@
     (call-hooks :updated :factions factions)
     factions))
 
-(defmethod refresh :faction [_ faction]
+(defmethod query :faction [_ faction]
   (trace "Query faction" (sym faction))
   (let [faction (q :get-faction {:factionSymbol (sym faction)})]
     (swap! state update-in [:factions (keyword (sym faction))]
@@ -576,7 +570,7 @@
 
 ;; ** Fleet
 
-(defmethod refresh :ships [_ _]
+(defmethod query :ships [_ _]
   (trace "Query ships")
   (let [limit 20
         ships (loop [result [] page 1]
@@ -590,9 +584,9 @@
     (call-hooks :updated :ships ships)
     ships))
 
-#_(count (refresh! :ships))
+#_(count (query! :ships))
 
-(defmethod refresh :ship [_ ship]
+(defmethod query :ship [_ ship]
   (trace "Query ship" (sym ship))
   (let [ship (q :get-my-ship {:shipSymbol (sym ship)})]
     (swap! state update-in [:ships (keyword (sym ship))]
@@ -600,9 +594,9 @@
     (call-hooks :updated :ship ship)
     ship))
 
-#_(def ship (refresh! :ship "GENQREF-1"))
+#_(def ship (query! :ship "GENQREF-1"))
 
-(defmethod refresh :cargo [_ ship]
+(defmethod query :cargo [_ ship]
   (trace "Query cargo for ship" (sym ship))
   (let [cargo (q :get-ship-cargo {:shipSymbol (sym ship)})]
     (swap! state update-in [:ships (keyword (sym ship)) :cargo]
@@ -610,7 +604,7 @@
     (call-hooks :updated :cargo ship cargo)
     cargo))
 
-(defmethod refresh :cooldown [_ ship]
+(defmethod query :cooldown [_ ship]
   (trace "Query cooldown for ship" (sym ship))
   (let [cooldown (q :get-ship-cooldown {:shipSymbol (sym ship)})]
     (swap! state update-in [:ships (keyword (sym ship)) :cooldown]
@@ -618,7 +612,7 @@
     (call-hooks :updated :cooldown ship cooldown)
     cooldown))
 
-(defmethod refresh :nav [_ ship]
+(defmethod query :nav [_ ship]
   (trace "Query nav for ship" (sym ship))
   (let [nav (q :get-ship-nav {:shipSymbol (sym ship)})]
     (swap! state update-in [:ships (keyword (sym ship)) :nav]
@@ -626,7 +620,7 @@
     (call-hooks :updated :nav ship nav)
     nav))
 
-(defmethod refresh :mounts [_ ship]
+(defmethod query :mounts [_ ship]
   (trace "Query mounts for ship" (sym ship))
   (let [mounts (q :get-mounts {:shipSymbol (sym ship)})]
     (swap! state update-in [:ships (keyword (sym ship))]
@@ -636,7 +630,7 @@
 
 ;; ** Contracts
 
-(defmethod refresh :contracts [_ _]
+(defmethod query :contracts [_ _]
   (trace "Query contracts")
   (let [contracts (q :get-contracts)]
     (swap! state update :contracts
@@ -644,7 +638,7 @@
     (call-hooks :updated :contracts contracts)
     contracts))
 
-(defmethod refresh :contract [_ {:keys [id] :as contract}]
+(defmethod query :contract [_ {:keys [id] :as contract}]
   (trace "Query contract" id)
   (let [contract (q :get-contract {:contractId id})]
     (swap! state update-in [:contracts (keyword id)]
@@ -654,7 +648,7 @@
 
 ;; ** Systems
 
-(defmethod refresh :systems [_ _]
+(defmethod query :systems [_ _]
   (trace "Query systems")
   (let [systems (q :get-systems)]
     (swap! state update :systems
@@ -662,7 +656,7 @@
     (call-hooks :updated :systems systems)
     systems))
 
-(defmethod refresh :system [_ system]
+(defmethod query :system [_ system]
   (trace "Query system" (sym system))
   (let [system (q :get-system {:systemSymbol (sym system)})]
     (swap! state update-in [:systems (keyword (sym system))]
@@ -670,7 +664,7 @@
     (call-hooks :updated :system system)
     system))
 
-(defmethod refresh :waypoints [_ system]
+(defmethod query :waypoints [_ system]
   (trace "Query waypoints for system" (sym system))
   (let [waypoints (q :get-system-waypoints {:systemSymbol (sym system)})]
     (swap! state update :waypoints
@@ -678,7 +672,7 @@
     (call-hooks :updated :waypoints system waypoints)
     waypoints))
 
-(defmethod refresh :waypoint [_ waypoint]
+(defmethod query :waypoint [_ waypoint]
   (trace "Query waypoint" (sym waypoint))
   (let [waypoint (q :get-waypoint {:systemSymbol (util/parse-system (sym waypoint))
                                    :waypointSymbol (sym waypoint)})]
@@ -687,7 +681,7 @@
     (call-hooks :updated :waypoint waypoint)
     waypoint))
 
-(defmethod refresh :market [_ waypoint]
+(defmethod query :market [_ waypoint]
   (trace "Query market at waypoint" (sym waypoint))
   (let [symbol (sym waypoint)
         market (q :get-market {:systemSymbol (util/parse-system symbol)
@@ -697,7 +691,7 @@
     (call-hooks :updated :market waypoint market)
     market))
 
-(defmethod refresh :shipyard [_ waypoint]
+(defmethod query :shipyard [_ waypoint]
   (trace "Query shipyard at waypoint" (sym waypoint))
   (let [symbol (sym waypoint)
         shipyard (q :get-shipyard {:systemSymbol (util/parse-system symbol)
@@ -707,7 +701,7 @@
     (call-hooks :updated :shipyard waypoint shipyard)
     shipyard))
 
-(defmethod refresh :jumpgate [_ waypoint]
+(defmethod query :jumpgate [_ waypoint]
   (trace "Query jump gate at waypoint" (sym waypoint))
   (let [{:keys [connectedSystems] :as jumpgate}
         (q :get-jump-gate {:systemSymbol (util/parse-system (sym waypoint))
@@ -724,7 +718,7 @@
 
 ;; ** Agents
 
-(defmethod refresh :agent [_ _]
+(defmethod query :my-agent [_ _]
   (trace "Query agent")
   (let [agent (q :get-my-agent)]
     (swap! state update :agent
@@ -732,16 +726,111 @@
     (call-hooks :updated :agent agent)
     agent))
 
-#_(refresh! :agent)
+#_(query! :agent)
 
 ;; * GET api
 
+(defn query!
+  ([entity] (query! entity nil))
+  ([entity emap] (query entity emap)))
+
+#_(def ship (query! :ship ship))
+
+;;; `refresh!` queries the local cache (good) with implicit fallback to `query!`
+
+(defmulti refresh (fn [entity _] entity))
+
+(defmethod refresh :agents [_ _]
+  (or (-> @state :agents vals)
+      (query! :agents)))
+
+(defmethod refresh :agent [_ agent]
+  (or (-> @state :agents (get (keyword (sym agent))))
+      (query! :agent agent)))
+
+(defmethod refresh :factions [_ _]
+  (or (-> @state :factions vals)
+      (query! :factions)))
+
+(defmethod refresh :faction [_ faction]
+  (or (-> @state :factions (get (keyword (sym faction))))
+      (query! :faction faction)))
+
+(defmethod refresh :ships [_ _]
+  (or (-> @state :ships vals)
+      (query! :ships)))
+
+(defmethod refresh :ship [_ ship]
+  (or (-> @state :ships (get (keyword (sym ship))))
+      (query! :ship ship)))
+
+(defmethod refresh :cargo [_ ship]
+  (or (:cargo (refresh :ship ship))
+      (query! :cargo ship)))
+
+(defmethod refresh :cooldown [_ ship]
+  (or (:cooldown (refresh :ship ship))
+      (query! :cooldown ship)))
+
+(defmethod refresh :nav [_ ship]
+  (or (:nav (refresh :ship ship))
+      (query! :nav ship)))
+
+(defmethod refresh :mounts [_ ship]
+  (or (:mounts (refresh :ship ship))
+      (query! :mounts ship)))
+
+(defmethod refresh :contracts [_ _]
+  (or (-> @state :contracts vals)
+      (query! :contracts)))
+
+(defmethod refresh :contract [_ contract]
+  (or (-> @state :contracts (get (keyword (get contract :id contract))))
+      (query! :contract contract)))
+
+(defmethod refresh :systems [_ _]
+  (or (-> @state :systems vals)
+      (query! :systems)))
+
+(defmethod refresh :system [_ system]
+  (or (-> @state :systems (get (keyword (sym system))))
+      (query! :system system)))
+
+(defmethod refresh :waypoints [_ _]
+  (or (-> @state :waypoints vals)
+      (query! :waypoints)))
+
+(defmethod refresh :waypoint [_ waypoint]
+  (or (-> @state :waypoints (get (keyword (sym waypoint))))
+      (query! :waypoint waypoint)))
+
+(defmethod refresh :markets [_ _]
+  (or (-> @state :markets vals)
+      (throw "There is no endpoint to query multiple markets")))
+
+(defmethod refresh :market [_ waypoint]
+  (or (-> @state :markets (get (keyword (sym waypoint))))
+      (query! :market waypoint)))
+
+(defmethod refresh :shipyards [_ _]
+  (or (-> @state :shipyards vals)
+      (throw "There is no endpoint to query multiple shipyards")))
+
+(defmethod refresh :shipyard [_ waypoint]
+  (or (-> @state :shipyards (get (keyword (sym waypoint))))
+      (query! :shipyard waypoint)))
+
+(defmethod refresh :jumpgates [_ _]
+  (or (-> @state :jumpgates vals)
+      (throw "There is no endpoint to query multiple jumpgates")))
+
+(defmethod refresh :jumpgate [_ waypoint]
+  (or (-> @state :jumpgates (get (keyword (sym waypoint))))
+      (query! :jumpgate waypoint)))
+
 (defn refresh!
   ([entity] (refresh! entity nil))
-  ([entity {:keys [symbol] :as emap}]
-   (refresh entity emap)))
-
-#_(def ship (refresh! :ship ship))
+  ([entity emap] (refresh entity emap)))
 
 ;; * POST/PATCH (actions)
 
@@ -1666,12 +1755,13 @@
 
 ;;; Convenience
 
+;; TODO: make it use refresh! instead of query!
 (defn sell-all-cargo!
   ([ship] (sell-all-cargo! ship {}))
   ([ship {:keys [except] :or {except []}}]
    (debug "Ship" (sym ship) "visiting market")
    (let [ship (refresh! :ship ship)
-         market (refresh! :market {:symbol (-> ship :nav :waypointSymbol)})
+         ;; market (refresh! :market {:symbol (-> ship :nav :waypointSymbol)})
          inv (->> ship :cargo :inventory)
          inv² (remove #(->> % :symbol (contains? (set except))) inv)]
      (doseq [{:keys [symbol units] :as item} inv²]
