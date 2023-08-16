@@ -21,7 +21,7 @@
             [genqref-lib.algo.tsp :as tsp]
             [genqref-lib.scheduler :refer [schedule!]]
             [slingshot.slingshot :refer [try+ throw+]]
-            [throttler.core :refer [throttle-fn]])
+            [genqref-lib.throttling :as throttling])
   (:gen-class))
 
 ;; * Decalarations
@@ -307,8 +307,10 @@
 
 ;; ** Throttling
 
-;; NOTE: bursts in this lib work different than for st-api
-(def q** (throttle-fn q* 2 :second 1))
+(def q** (throttling/throttle-fn q* {:regular-count 2
+                                     :regular-timeout 1000
+                                     :burst-count 10
+                                     :burst-timeout 10000}))
 
 ;; ** Convenience and logging
 
