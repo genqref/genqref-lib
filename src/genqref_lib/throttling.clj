@@ -11,8 +11,16 @@
   (let [output-channel (chan)
         fill-regular-channel (chan)
         fill-burst-channel (chan)
+        done-channel (chan)
         regular-channel (chan (sliding-buffer regular-count))
         burst-channel (chan (sliding-buffer burst-count))]
+    (go
+      (while true
+        (let [token (<! done-channel)]
+          (case token
+            :regular (>! fill-regular-channel true)
+            :burst (>! fill-burst-channel true)
+            :default))))
     (go
       (while true
         (fill regular-channel regular-count :regular)
@@ -25,22 +33,20 @@
         (<! (timeout burst-timeout))))
     (go
       (while true
-        (let [msg (<! input-channel)
-              [token _] (alts! [regular-channel burst-channel] :priority true)]
-          (>! output-channel msg)
-          (case token
-            :regular (>! fill-regular-channel true)
-            :burst (>! fill-burst-channel true)
-            :default))))
-    output-channel))
+        (<! input-channel)
+        (let [[token _] (alts! [regular-channel burst-channel] :priority true)]
+          (>! output-channel token))))
+    [output-channel done-channel]))
 
 (defn throttle-fn [f opts]
   (let [in (chan 1)
-        out (throttle-chan in opts)]
+        [out done] (throttle-chan in opts)]
     (fn [& args]
       (>!! in true)
-      (<!! out)
-      (apply f args))))
+      (let [token (<!! out)
+            result (apply f args)]
+        (>!! done token)
+        result))))
 
 #_(defn f [x]
     (println "Hey I'm function call" x))

@@ -10,6 +10,7 @@
    - https://st-universe.se1.serial-experiments.com/v2/"
   (:require [clojure.string :as str]
             [clojure.set :as set]
+            [clojure.core.async :refer [>!! <! go go-loop chan]]
             [martian.core :as martian]
             [martian.httpkit :as martian-http]
             [duratom.core :refer [duratom]]
@@ -175,6 +176,7 @@
 ;; TODO: handle network issues with retrying
 ;; TODO: catch registration required after reset
 ;; TODO: rename q, q* and q** to request, request* and request**
+;; TODO: write all requests to a request log for later analysis
 (defn- q* [args]
   (let [result
         (let [response (safe-deref (apply (partial martian/response-for *api*) args))]
@@ -211,12 +213,19 @@
                 ;; units. Ship transfer failed. Both ships must be
                 ;; docked or both ships must be in orbit.
                 400 (do)
+                ;; 4000 - Ship action is still on cooldown for 25
+                ;; second(s)
+                4000 {:retry (-> response :body :error :data :cooldown :remainingSeconds)}
                 ;; 4202 - Navigate request failed. Destination
                 ;; X1-VS75-93799Z is outside the X1-XN54 system.
                 4202 (do)
                 ;; 4203 - Navigate request failed. Ship GENQREF-3
                 ;; requires 56 more fuel for navigation.
                 4203 (do
+                       ;; FIXME: this creates an endless loop if the
+                       ;; destination in farther away than the ship
+                       ;; can hold fuel for, or if the local market
+                       ;; doesn't provide fuel
                        (dock! (:shipSymbol (second args)))
                        (refuel! (:shipSymbol (second args)))
                        (orbit! (:shipSymbol (second args)))
@@ -284,7 +293,8 @@
             (let [{:keys [error]} (-> response :body)
                   timeout (-> error :data :retryAfter)]
               (warn ">>> We're going too fast (429), timeout for" timeout "seconds. <<<")
-              {:retry timeout})
+              ;; FIXME: factor 2 to recorver from being to eager
+              {:retry (* 2 timeout)})
 
             ;; The server encountered a temporary error and could not
             ;; complete your request. Please try again in 30 seconds.
@@ -312,13 +322,22 @@
                                      :burst-count 10
                                      :burst-timeout 10000}))
 
+(def request-channel (chan))
+
+(def consume-request-log
+  (go
+    (while true
+      (let [[req t0 t1] (<! request-channel)]
+        (info "REQ" req (format "%.2fs" (float (/ (- t1 t0) 1000))))))))
+
 ;; ** Convenience and logging
 
 (defn q [& args]
   (let [now #(System/currentTimeMillis)
         t0 (now)
         result (q** args)]
-    (debug "REQ" (first args) (format "%.2fs" (float (/ (- (now) t0) 1000))))
+    ;; (debug "REQ" (first args) (format "%.2fs" (float (/ (- (now) t0) 1000))))
+    (>!! request-channel [(first args) t0 (now)])
     result))
 
 ;; * State (local cache)
@@ -666,9 +685,10 @@
     (call-hooks :updated :system system)
     system))
 
+;; TODO: this should be paged like :ships
 (defmethod query :waypoints [_ system]
   (trace "Query waypoints for system" (sym system))
-  (let [waypoints (q :get-system-waypoints {:systemSymbol (sym system)})]
+  (let [waypoints (q :get-system-waypoints {:systemSymbol (sym system) :limit 20})]
     (swap! state update :waypoints
            util/deep-merge (util/index-by (comp keyword :symbol) waypoints))
     (call-hooks :updated :waypoints system waypoints)
@@ -798,9 +818,11 @@
   (or (-> @state :systems (get (keyword (sym system))))
       (query! :system system)))
 
-(defmethod refresh :waypoints [_ _]
-  (or (-> @state :waypoints vals)
-      (query! :waypoints)))
+(defmethod refresh :waypoints [_ system]
+  (if system
+    (or (->> @state :waypoints vals (filter #(-> % :systemSymbol #{(sym system)})) not-empty)
+        (query! :waypoints system))
+    (-> @state :waypoints vals)))
 
 (defmethod refresh :waypoint [_ waypoint]
   (or (-> @state :waypoints (get (keyword (sym waypoint))))
@@ -864,7 +886,7 @@
                         ;; this is a new ship, so assoc-in is ok in this case
                         (update :ships assoc (keyword (sym ship)) ship)
                         ;; TODO: index transaction too, for mergability
-                        (update :transactions conj transaction)))
+                        (update :transactions conj (assoc transaction :reason "purchase-ship"))))
       ;; callbacks
       (call-hooks :after :purchase-ship {:shipyard shipyard
                                          :agent agent
@@ -1320,7 +1342,8 @@
              util/deep-merge agent)
       (swap! state update-in [:ships (keyword (sym ship)) :cargo]
              util/deep-merge cargo)
-      ;; TODO: do someting with transaction
+      (swap! state update :transactions conj
+             (assoc transaction :reason "sell-cargo"))
       ;; callbacks
       (call-hooks :after :sell-cargo {:ship ship
                                       :trade-symbol trade-symbol
@@ -1475,7 +1498,8 @@
              util/deep-merge agent)
       (swap! state update-in [:ships (keyword (sym ship)) :fuel]
              util/deep-merge fuel)
-      ;; TODO: store transaction somewhere
+      (swap! state update :transactions conj
+             (assoc transaction :reason "refuel-ship"))
       ;; callbacks
       (call-hooks :after :refuel {:ship (get-in @state [:ships (keyword (sym ship))])
                                   :agent agent
@@ -1510,7 +1534,8 @@
              util/deep-merge agent)
       (swap! state update-in [:ships (keyword (sym ship)) :cargo]
              util/deep-merge cargo)
-      (swap! state update :transactions conj transaction)
+      (swap! state update :transactions conj
+             (assoc transaction :reason "purchase-cargo"))
       ;; callbacks
       (call-hooks :after :purchase-cargo {:ship ship
                                           :trade trade
@@ -1707,7 +1732,9 @@
              util/deep-merge {:mounts mounts :cargo cargo})
       (swap! state update :agent
              util/deep-merge agent)
-      (swap! state update :transaction conj transaction)
+      ;; TODO: maybe we need to add the information that this was from install-mount
+      (swap! state update :transactions conj
+             (assoc transaction :reason "install-mount"))
       ;; callbacks
       (call-hooks :after :install-mount {:agent agent
                                          :mounts mounts
@@ -1740,7 +1767,9 @@
              util/deep-merge {:mounts mounts :cargo cargo})
       (swap! state update :agent
              util/deep-merge agent)
-      (swap! state update :transaction conj transaction)
+      ;; TODO: add info that this was remove-mount
+      (swap! state update :transactions conj
+             (assoc transaction :reason "remove-mount"))
       ;; callbacks
       (call-hooks :after :remove-mount {:agent agent
                                         :mounts mounts
