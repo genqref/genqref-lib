@@ -337,7 +337,7 @@
         t0 (now)
         result (q** args)]
     ;; (debug "REQ" (first args) (format "%.2fs" (float (/ (- (now) t0) 1000))))
-    (>!! request-channel [(first args) t0 (now)])
+    ;; (>!! request-channel [(first args) t0 (now)])
     result))
 
 ;; * State (local cache)
@@ -782,9 +782,14 @@
   (or (-> @state :ships vals)
       (query! :ships)))
 
+(defn- ship-index [ship]
+  (->> (str/split (sym ship) #"-") last (str "0x") read-string))
+
 (defmethod refresh :ship [_ ship]
-  (or (-> @state :ships (get (keyword (sym ship))))
-      (query! :ship ship)))
+  (if (number? ship)
+    (nth (->> @state :ships vals (sort-by ship-index)) (dec ship))
+    (or (-> @state :ships (get (keyword (sym ship))))
+        (query! :ship ship))))
 
 (defmethod refresh :cargo [_ ship]
   (or (:cargo (refresh :ship ship))
@@ -828,9 +833,14 @@
   (or (-> @state :waypoints (get (keyword (sym waypoint))))
       (query! :waypoint waypoint)))
 
-(defmethod refresh :markets [_ _]
-  (or (-> @state :markets vals)
-      (throw "There is no endpoint to query multiple markets")))
+#_(-> @state :markets vals first keys)
+
+(defmethod refresh :markets [_ system]
+  (if system
+    (or (->> @state :markets vals (filter #(-> % :symbol util/parse-system #{(sym system)})) not-empty)
+        (throw "There is no endpoint to query multiple markets"))
+    (or (-> @state :markets vals)
+        (throw "There is no endpoint to query multiple markets"))))
 
 (defmethod refresh :market [_ waypoint]
   (or (-> @state :markets (get (keyword (sym waypoint))))
@@ -1153,7 +1163,8 @@
                                     :units units
                                     :cargo cargo})
       ;; return
-      response)
+      {:ship (get-in @state [:ships (keyword (sym ship))])
+       :response response})
     (do
       (debug "Ship" (sym ship) "failed to jettison" units "units of" (sym item))
       (call-hooks :failed :jettison {:ship ship
@@ -1350,7 +1361,8 @@
                                       :units units
                                       :response response})
       ;; return
-      response)
+      {:ship (get-in @state [:ships (keyword (sym ship))])
+       :response response})
     (do
       (debug "Ship" (sym ship) "failed to sell" units "units of" trade-symbol)
       (call-hooks :failed :sell-cargo {:ship ship
@@ -1492,7 +1504,10 @@
       (when-let [unused (not-empty (dissoc response :agent :fuel :transaction))]
         (warn "UNUSED BY refuel!" (prn-str unused)))
       ;; tracing
-      (debug "Ship" (sym ship) "refueled")
+      (debug "Ship" (sym ship) "refueled"
+             (:units transaction) "units"
+             (:tradeSymbol transaction)
+             "for" (:totalPrice transaction))
       ;; update state
       (swap! state update :agent
              util/deep-merge agent)
@@ -1545,7 +1560,8 @@
                                           :transaction transaction
                                           :response response})
       ;; return
-      response)
+      {:ship (get-in @state [:ships (keyword (sym ship))])
+       :response response})
     (do
       (debug "Ship" (sym ship) "failed to purchase" units "units of" trade)
       (call-hooks :failed :purchase-cargo {:ship ship
@@ -1694,7 +1710,7 @@
         (when-let [unused (not-empty (dissoc response :contract :agent))]
           (warn "UNUSED BY fulfill-contract!" (prn-str unused)))
         ;; tracing
-        (debug "Fulfilled contracts" id)
+        (debug "Fulfilled contract" id)
         ;; update state
         (swap! state update-in [:contracts (keyword (:id contract))]
                util/deep-merge contract)
