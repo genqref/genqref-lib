@@ -3,4 +3,5 @@
             [genqref-lib.util :as util :refer [sym]]))
 
 (defn markets-in-system [system]
-  (->> @state :markets vals (filter #(-> % :symbol util/parse-system #{(sym system)}))))
+  ;; why are there nils in there?
+  (->> @state :markets vals (remove nil?) (filter #(-> % :symbol util/parse-system #{(sym system)}))))
