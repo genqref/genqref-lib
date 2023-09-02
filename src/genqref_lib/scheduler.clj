@@ -7,7 +7,7 @@
 ;; TODO: maybe make this a duratom
 (defonce ^:private schedule (atom {}))
 
-(defn- due-action? [[ts f]]
+(defn- due-action? [[[ts _] f]]
   (pos? (compare (t/now) ts)))
 
 (defonce scheduler
@@ -17,18 +17,18 @@
      (while true
        (util/sleep 1)
        (let [due (filter due-action? @schedule)]
-         (doseq [[time f] due]
+         (doseq [[token f] due]
            (do
-             (trace "Perform for" time)
+             (trace "Perform for" token)
              (util/safe-future (f))
-             (swap! schedule dissoc time))))))))
+             (swap! schedule dissoc token))))))))
 
 ;; TODO: this works but should probably be a macro instead so we can
 ;; retain a human readable and more important seriazable version of
 ;; `f`
 (defn schedule! [time f]
   (trace "Scheduled for" time)
-  (swap! schedule assoc time f))
+  (swap! schedule assoc [time (rand)] f))
 
 (defn cancel-everything! []
   (reset! schedule {}))

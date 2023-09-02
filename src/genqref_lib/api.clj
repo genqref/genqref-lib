@@ -1090,8 +1090,6 @@
   ([ship] (extract! ship {}))
   ([ship {:keys [on-cooldown] :as options}]
    (trace "Ship" (sym ship) "is about to extract resources")
-   (when-not on-cooldown
-     (warn "WARNING: SHIP" (sym ship) "EXTRACTS WITHOUT AFTER COOLDOWN ACTION"))
    (call-hooks :before :extract {:ship ship
                                  :options options})
    (if-let [{:keys [extraction cooldown cargo] :as response}
@@ -1110,6 +1108,7 @@
        (swap! state update-in [:ships (keyword (sym ship))]
               util/deep-merge {:cargo cargo
                                :cooldown cooldown})
+       ;; TODO: store extraction somewhere
        ;; scheduling
        (if-let [expiration (:expiration cooldown)]
          (schedule! expiration
@@ -1120,9 +1119,7 @@
                                                         :extraction extraction
                                                         :cooldown cooldown
                                                         :cargo cargo})
-                       (if on-cooldown
-                         (on-cooldown)
-                         (warn "WARNING: SHIP" (sym ship) "DID NOT SPECIFIY ACTION AFTER EXTRACT"))))
+                       (when on-cooldown (on-cooldown))))
          (error "Schedule failed. No expiration in" (prn-str response)))
        ;; callbacks
        (call-hooks :after :extract {:ship ship
@@ -1131,7 +1128,7 @@
                                     :cooldown cooldown
                                     :cargo cargo})
        ;; return
-       response)
+       (assoc response :ship (-> @state :ships (get (keyword (sym ship))))))
      (do
        (debug "Ship" (sym ship) "failed to extract resources")
        (call-hooks :failed :extract {:ship ship
@@ -1813,5 +1810,11 @@
          inv² (remove #(->> % :symbol (contains? (set except))) inv)]
      (doseq [{:keys [symbol units] :as item} inv²]
        (sell-cargo! ship symbol units)))))
+
+(defn jettison-all-cargo! [ship]
+  (let [ship (refresh! :ship ship)
+        inv (->> ship :cargo :inventory)]
+    (doseq [{:keys [symbol units] :as item} inv]
+      (jettison! ship symbol units))))
 
 "Loaded api."

@@ -12,7 +12,11 @@
                  [cheshire "5.11.0"]
                  [slingshot "0.12.2"]
                  [org.clojure/core.async "1.6.681"]
-                 [org.clojure/core.logic "1.0.1"]]
+                 [org.clojure/core.logic "1.0.1"]
+                 [potemkin "0.4.6"]
+                 [com.github.seancorfield/next.jdbc "1.3.883"]
+                 [org.xerial/sqlite-jdbc "3.43.0.0"]
+                 [honeysql "1.0.461"]]
   :repl-options {:init-ns genqref-lib.core}
   :repositories [["releases" {:url "https://repo.clojars.org"}]]
   :deploy-repositories [["releases" :clojars]
