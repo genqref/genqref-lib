@@ -59,6 +59,9 @@
 
 #_(status)
 
+(defn token-key [callsign]
+  [callsign (:resetDate (status))])
+
 (defn token
   "Returns the token for the current run."
   [callsign]
@@ -1356,6 +1359,9 @@
       (call-hooks :after :sell-cargo {:ship ship
                                       :trade-symbol trade-symbol
                                       :units units
+                                      :transaction transaction
+                                      :agent agent
+                                      :cargo cargo
                                       :response response})
       ;; return
       {:ship (get-in @state [:ships (keyword (sym ship))])
