@@ -293,11 +293,15 @@
             ;; Exceeded the rate limit. This should never happen as
             ;; we're activley throttling request toi what's allowed.
             (-> response :status #{429})
-            (let [{:keys [error]} (-> response :body)
-                  timeout (-> error :data :retryAfter)]
-              (warn ">>> We're going too fast (429), timeout for" timeout "seconds. <<<")
-              ;; FIXME: factor 2 to recorver from being to eager
-              {:retry (* 2 timeout)})
+            (let [{:keys [error]} (-> response :body)]
+              (if-let [timeout (-> error :data :retryAfter)]
+                (do
+                  (warn ">>> We're going too fast (429), timeout for" timeout "seconds. <<<")
+                  ;; FIXME: factor 2 to recorver from being to eager
+                  {:retry (* 2 timeout)})
+                (do
+                  (warn "!!! We're going too fast (429), but there was no retryAfter in " error)
+                  {:retry 2})))
 
             ;; The server encountered a temporary error and could not
             ;; complete your request. Please try again in 30 seconds.
@@ -323,7 +327,8 @@
 (def q** (throttling/throttle-fn q* {:regular-count 2
                                      :regular-timeout 1000
                                      :burst-count 10
-                                     :burst-timeout 10000}))
+                                     :burst-timeout 10000
+                                     :grace 1.01}))
 
 (def request-channel (chan))
 
@@ -511,11 +516,7 @@
 
 (defonce ^:private hooks (atom {}))
 
-(defn register-hooks [hook-map]
-  (swap! hooks merge hook-map))
-
-(defn reset-hooks! []
-  (reset! hooks {}))
+#_(-> @hooks count)
 
 (defn regexify [x]
   (if (= (type x) java.util.regex.Pattern)
@@ -526,25 +527,38 @@
 #_(regexify "hello")
 #_(regexify :hello)
 
+(defn register-hooks [id hook-map]
+  (swap! hooks assoc id (update-keys hook-map regexify))
+  (count @hooks))
+
+(defn unregister-hooks [id]
+  (swap! hooks dissoc id))
+
+(defn reset-hooks! []
+  (reset! hooks {}))
+
+#_(reset-hooks!)
+
 (defn- call-hooks [stage subject & arguments]
   ;;  stage is one of :updated, :before, :after, :failure
   (let [stage-subject (str (name stage) "-" (name subject))]
-    (doseq [[pattern hook-fn] @hooks]
-      (when (re-matches (regexify pattern) stage-subject)
-        ;; first try it with all arguments
-        (loop [args (concat [stage subject] arguments)]
-          (when-not
-              (try
-                (apply hook-fn args)
-                :success
-                (catch clojure.lang.ArityException e
-                  (if (nil? args)
-                    (do
-                      (error "Hook" stage-subject "was never called, due to too many arguments.")
-                      :failure)
-                    false)))
-            ;; if it fails try it with one argument less
-            (recur (butlast args))))))))
+    (doseq [[id hooks-map] @hooks]
+      (doseq [[pattern handler] hooks-map]
+        (when (re-matches pattern stage-subject)
+          ;; first try it with all arguments
+          (loop [args (concat [stage subject] arguments)]
+            (when-not
+                (try
+                  (apply handler args)
+                  :success
+                  (catch clojure.lang.ArityException e
+                    (if (nil? args)
+                      (do
+                        (error "Hook" stage-subject "was never called, due to too many arguments.")
+                        :failure)
+                      false)))
+              ;; if it fails try it with one argument less
+              (recur (butlast args)))))))))
 
 #_(call-hooks :after :jump "GENQREF-1" :asdf)
 
