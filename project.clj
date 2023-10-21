@@ -3,7 +3,7 @@
   :url "https://github.com/genqref/genqref-lib"
   :license {:name "EPL-2.0 OR GPL-2.0-or-later WITH Classpath-exception-2.0"
             :url "https://www.eclipse.org/legal/epl-2.0/"}
-  :dependencies [[org.clojure/clojure "1.10.0"]
+  :dependencies [[org.clojure/clojure "1.11.1"]
                  [com.github.oliyh/martian "0.1.25"]
                  [com.github.oliyh/martian-httpkit "0.1.25"]
                  [com.github.oliyh/martian-vcr "0.1.25"]
@@ -16,7 +16,8 @@
                  [potemkin "0.4.6"]
                  [com.github.seancorfield/next.jdbc "1.3.883"]
                  [org.xerial/sqlite-jdbc "3.43.0.0"]
-                 [honeysql "1.0.461"]]
+                 [honeysql "1.0.461"]
+                 [metosin/sieppari "0.0.0-alpha13"]]
   :repl-options {:init-ns genqref-lib.core}
   :repositories [["releases" {:url "https://repo.clojars.org"}]]
   :deploy-repositories [["releases" :clojars]

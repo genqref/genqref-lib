@@ -25,7 +25,7 @@
             [genqref-lib.throttling :as throttling])
   (:gen-class))
 
-;; * Decalarations
+;; * Declarations
 
 (declare dock!)
 (declare orbit!)
@@ -897,6 +897,8 @@
 
 ;; ** Fleet
 
+;; --------------------------------------------------------------------------------
+
 (defn purchase-ship! [shipyard ship-type]
   (trace "About to purchase" ship-type "at" (sym shipyard))
   (call-hooks :before :purchase-ship {:shipyard shipyard
@@ -1482,7 +1484,7 @@
    (call-hooks :before :scan-ships {:ship ship
                                     :options options})
    (if-let [{:keys [cooldown ships] :as response}
-            (q :create-ship-waypoint-scan {:shipSymbol (sym ship)})]
+            (q :create-ship-ship-scan {:shipSymbol (sym ship)})]
      (do
        ;; diligence
        (when-let [unused (not-empty (dissoc response :cooldown :ships))]

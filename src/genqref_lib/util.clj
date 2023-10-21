@@ -25,6 +25,9 @@
                         (last args)))
          maps))
 
+(defn map-kv [f coll]
+  (reduce-kv #(conj %1 (f %2 %3)) [] coll))
+
 ;;; generic math stuff
 
 (defn square [x]
