@@ -1,0 +1,129 @@
+---
+purchase-ship:
+  before: About to purchase <%= ship-type %> at <%= (sym shipyard) %>
+  after: Purchased <%= ship-type %> at <%= (sym shipyard) %>
+  error: Failed to purchase <%= ship-type %> at <%= (sym shipyard) %>
+orbit-ship:
+  before: Ship <%= (sym ship) %> is about to move to orbit
+  after: Ship <%= (sym ship) %> moved to orbit
+  error: Ship <%= (sym ship) %> failed to move to orbit
+ship-refine:
+  before: Ship <%= (sym ship) %> is about to refine <%= produce %>
+  after: Ship <%= (sym ship) %> refined <%= (list-goods consumed) %> into <%= (list-goods produced) %>
+  error: Ship <%= (sym ship) %> failed to refine <%= produce %>
+create-chart:
+  before: Ship <%= (sym ship) %> is about to chart a waypoint
+  after: Ship <%= (sym ship) %> charted waypoint
+  error: Ship <%= (sym ship) %> failed to chart waypoint
+dock-ship:
+  before: Ship <%= (sym ship) %> is about to dock
+  after: Ship <%= (sym ship) %> docked at <%= (:waypointSymbol nav) %>
+  error: Ship <%= (sym ship) %> failed to dock
+create-survey:
+  before: Ship <%= (sym ship) %> is about to conduct a survey
+  after: >-
+    Ship <%= (sym ship) %> conducted a survey and found... TODO
+  error: Ship <%= (sym ship) %> failed to conduct a survey
+extract-resources:
+  before: Ship <%= (sym ship) %> is about to extract resources
+  after: >-
+    Ship <%= (sym ship) %>
+    extracted <%= (-> extraction :yield :units) %>
+    units of <%= (-> extraction :yield :symbol) %>
+  error: Ship <%= (sym ship) %> failed to extract resources
+jettison:
+  before: Ship <%= (sym ship) %> is about to jettison <%= units %> units of <%= (sym item) %>
+  after: Ship <%= (sym ship) %> jettisoned <%= units %> units of <%= (sym item) %>
+  error: Ship <%= (sym ship) %> failed to jettison <%= units %> units of <%= (sym item) %>
+jump-ship:
+  before: Ship <%= (sym ship) %> is about to jump to system <%= (sym system) %> <% (xy system) %>
+  after: Ship <%= (sym ship) %> jumped to system <%= (sym system) %> <% (xy system) %>
+  error: Ship <%= (sym ship) %> failed to jump to system <%= (sym system) %>
+navigate-ship:
+  before: Ship <%= (sym ship) %> navigates to <%= (sym destination) %>
+  after: >-
+    Ship <%= (sym ship) %>
+    in transit to <%= (sym destination) %> (<%= (:type destination) %>)
+    arrival at <%= (-> nav :route :arrival) %>
+  error: Ship <%= (sym ship) %> failed to navigate to waypoint <%= (sym destination) %>
+patch-ship-nav:
+  before: Ship <%= (sym ship) %> is about to set flight mode to <%= mode %>
+  after: Ship <%= (sym ship) %> set flight mode to <%= mode %>
+  error: Ship <%= (sym ship) %> failed to set flight mode to <%= mode %>
+warp-ship:
+  before: Ship <%= (sym ship) %> is about to warp to <%= (sym destination) %>
+  after: >-
+    Ship <%= (sym ship) %>
+    is warping to <%= (sym destination) %>
+    arrival at <%= (-> nav :route :arrival) %>
+  error: Ship <%= (sym ship) %> failed to warp to <%= (sym destination) %>
+sell-cargo:
+  before: Ship <%= (sym ship) %> is about to sell <%= units %> units of <%= trade-symbol %>
+  after: >-
+    Ship <%= (sym ship) %>
+    sold <%= units %>
+    units of <%= trade-symbol %>
+    for <%= (:totalPrice transaction) %>
+  error: Ship <%= (sym ship) %> failed to sell <%= units %> units of <%= trade-symbol %>
+create-ship-system-scan:
+  before: Ship <%= (sym ship) %> is about to scan systems
+  after: Ship <%= (sym ship) %> scanned <%= (count systems) %> systems
+  error: Ship <%= (sym ship) %> failed to scan systems
+create-ship-waypoint-scan:
+  before: Ship <%= (sym ship) %> is about to scan waypoints
+  after: Ship <%= (sym ship) %> scanned <%= (count waypoints) %> waypoints
+  error: Ship <%= (sym ship) %> failed to scan waypoints
+create-ship-ship-scan:
+  before: Ship <%= (sym ship) %> is about to scan ships
+  after: Ship <%= (sym ship) %> scanned <%= (count ships) %> ships
+  error: Ship <%= (sym ship) %> failed to scan ships
+refuel-ship:
+  before: Ship <%= (sym ship) %> refuels
+  after: >-
+    Ship <%= (sym ship) %>
+    refueled <%= (:units transaction) %>
+    units of <%= (:tradeSymbol transaction) %>
+    for <%= (:totalPrice transaction) %>
+  error: Ship <%= (sym ship) %> failed to refuel
+purchase-cargo:
+  before: Ship <%= (sym ship) %> is about to purchase <%= units %> units of <%= trade %>
+  after: >-
+    Ship <%= (sym ship) %>
+    purchased <%= units %>
+    units of <%= trade %>
+    for <%= (:totalPrice transaction) %>
+  error: Ship <%= (sym ship) %> failed to purchase <%= units %> units of <%= trade %>
+transfer-cargo:
+  before: Ship <%= (sym from) %> is about to transfer <%= units %> of <%= trade %> to ship <%= (sym to) %>
+  after: Ship <%= (sym from) %> transfered <%= units %> of <%= trade %> to ship <%= (sym to) %>
+  error: Ship <%= (sym from) %> failed to transfer <%= units %> units of <%= trade %> to ship <%= (sym to) %>
+negotiate-contract:
+  before: Ship <%= (sym ship) %> is about to negotiate a contract
+  after: >-
+    Ship <%= (sym ship) %>
+    negotiated a contract: <%= (prn-str contract) %>
+  error: Ship <%= (sym ship) %> failed to negotiate contract
+deliver-contract:
+  before: Ship <%= (sym ship) %> delivers <%= units %> units of <%= trade %> on contract <%= (id contract) %>
+  after: Ship <%= (sym ship) %> delivered <%= units %> units of <%= trade %> on contract <%= (id contract) %>
+  error: >-
+    Ship <%= (sym ship) %>
+    failed to deliver <%= units %>
+    units of <%= trade %>
+    on contract <%= (id contract) %>
+accept-contract:
+  before: About to accept contract <%= (id contract) %>
+  after: Accepted contract <%= (id contract) %>
+  error: Failed to accept contract <%= (id contract) %>
+fulfill-contract:
+  before: About to fulfill contract <%= (id contract) %>
+  after: Fulfilled contract <%= (id contract) %>
+  error: Failed to fulfill contract <%= (id contract) %>
+install-mount:
+  before: About to install mount <%= (sym mount) %> into ship <%= (sym ship) %>
+  after: Installed mount <%= (sym mount) %> into ship <%= (sym ship) %>
+  error: Failed to install mount <%= (sym mount) %> into ship <%= (sym ship) %>
+remove-mount:
+  before: About to remove mount <%= (sym mount) %> from ship <%= (sym ship) %>
+  after: Removed mount <%= (sym mount) %> from ship <%= (sym ship) %>
+  error: Failed to remove mount <%= (sym mount) %> from ship <%= (sym ship) %>
