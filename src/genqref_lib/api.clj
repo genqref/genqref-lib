@@ -25,7 +25,7 @@
             [genqref-lib.throttling :as throttling])
   (:gen-class))
 
-;; * Decalarations
+;; * Declarations
 
 (declare dock!)
 (declare orbit!)
@@ -281,6 +281,9 @@
                 ;; 4602 - Market sell failed. Trade good IRON_ORE is
                 ;; not available at X1-VS75-70500X.
                 4602 (do)
+                ;; 4604 - Market transaction failed. Trade good GOLD
+                ;; has alimit of 10 units per transaction.
+                4604 (do)
                 ;; Ship GENQREF-2 is currently locked while processing
                 ;; another request. Concurrent requests to control a
                 ;; ship are not supported.
@@ -894,6 +897,8 @@
 
 ;; ** Fleet
 
+;; --------------------------------------------------------------------------------
+
 (defn purchase-ship! [shipyard ship-type]
   (trace "About to purchase" ship-type "at" (sym shipyard))
   (call-hooks :before :purchase-ship {:shipyard shipyard
@@ -1479,7 +1484,7 @@
    (call-hooks :before :scan-ships {:ship ship
                                     :options options})
    (if-let [{:keys [cooldown ships] :as response}
-            (q :create-ship-waypoint-scan {:shipSymbol (sym ship)})]
+            (q :create-ship-ship-scan {:shipSymbol (sym ship)})]
      (do
        ;; diligence
        (when-let [unused (not-empty (dissoc response :cooldown :ships))]
